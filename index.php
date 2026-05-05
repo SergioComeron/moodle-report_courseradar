@@ -186,6 +186,33 @@ if ($totalstudents > 0 && $totalmodules > 0) {
     $rs->close();
 }
 
+// Course-level visits per student (course home page views).
+$coursevisits      = []; // Keyed by userid: visit count.
+$totalcoursevisits = 0;
+
+if ($totalstudents > 0) {
+    [$cvinsql, $cvinparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'cv');
+    $cvsql = "SELECT userid, COUNT(*) AS visits
+                FROM {logstore_standard_log}
+               WHERE courseid     = :courseid
+                 AND action       = 'viewed'
+                 AND target       = 'course'
+                 AND timecreated >= :datefrom
+                 AND timecreated <= :dateto
+                 AND userid {$cvinsql}
+               GROUP BY userid";
+    $rs = $DB->get_recordset_sql($cvsql, array_merge([
+        'courseid' => $courseid,
+        'datefrom' => $datefrom,
+        'dateto'   => $dateto,
+    ], $cvinparams));
+    foreach ($rs as $row) {
+        $coursevisits[$row->userid] = (int)$row->visits;
+        $totalcoursevisits += (int)$row->visits;
+    }
+    $rs->close();
+}
+
 // Pre-compute sparkline bars for every student.
 $weekslots = [];
 for ($w = (int)($datefrom / 604800) * 604800; $w <= $dateto; $w += 604800) {
@@ -300,6 +327,15 @@ $totalrisk = count($atrisknone) + count($atrisklow);
 // Top least-visited resources.
 $topunseen = report_courseradar_top_unseen($validcms, $logdata, $totalstudents);
 
+// Unique module types present in topunseen (for its filter bar).
+$topunseentypes = [];
+foreach ($topunseen as $item) {
+    $mod = $item['cm']->modname;
+    if (!in_array($mod, $topunseentypes, true)) {
+        $topunseentypes[] = $mod;
+    }
+}
+
 // Days inactive per student (derived from last activity, no extra query).
 $daysinactive = [];
 foreach ($students as $uid => $stu) {
@@ -392,6 +428,15 @@ foreach ($validcms as $cmid => $cm) {
 }
 ksort($bysection);
 
+// Whether the course has hidden activities (drives the show/hide toggle).
+$hashidden = false;
+foreach ($validcms as $cm) {
+    if (!$cm->visible) {
+        $hashidden = true;
+        break;
+    }
+}
+
 // Number of resource table columns (varies when completion is enabled).
 $rescols = $hasanycompletion ? 8 : 7;
 
@@ -430,7 +475,6 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-heatmap td        { border-radius: 4px; padding: 5px 4px; text-align: center; min-width: 36px; cursor: default; }
 /* Ordenación */
 .cr-th-sort           { cursor: pointer; user-select: none; white-space: nowrap; }
-.cr-th-sort:hover     { background: rgba(255,255,255,.12) !important; }
 .cr-th-sort::after    { content: ' ⇅'; opacity: .35; font-size: .75em; }
 .cr-th-asc::after     { content: ' ▲'; opacity: 1; }
 .cr-th-desc::after    { content: ' ▼'; opacity: 1; }
@@ -440,8 +484,18 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-spark-bar         { flex: 1; min-width: 3px; border-radius: 2px 2px 0 0; background: #0d6efd; opacity: .75; transition: opacity .15s; cursor: default; }
 .cr-spark-bar:hover   { opacity: 1; }
 .cr-spark-empty       { color: #adb5bd; font-size: .8rem; }
+/* Filtro de tipos */
+.cr-type-filter-btn   { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; transition: all .15s; }
 </style>
 <script>
+/* ── Inicializar tooltips Bootstrap ───────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', function() {
+    crApplyFilters();
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+        new bootstrap.Tooltip(el);
+    });
+});
+
 /* ── Toggle fila de detalle ────────────────────────────────────────────────── */
 function crToggle(btn, rowId) {
     var row = document.getElementById(rowId);
@@ -490,6 +544,92 @@ function crSortResources(th, isNumeric) {
 }
 
 function crResetSort() { location.reload(); }
+
+/* ── Filtro de tipos en "Recursos menos visitados" ─────────────────────────── */
+function crFilterTopUnseen(btn, modname) {
+    var wasActive = btn.classList.contains('cr-type-active');
+    if (wasActive) {
+        btn.classList.remove('cr-type-active', 'btn-warning');
+        btn.classList.add('btn-outline-secondary');
+    } else {
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('cr-type-active', 'btn-warning');
+    }
+
+    var hiddenTypes = [];
+    document.querySelectorAll('.cr-topunseen-filter-btn').forEach(function(b) {
+        if (!b.classList.contains('cr-type-active')) { hiddenTypes.push(b.dataset.modname); }
+    });
+
+    var tbody = document.querySelector('#cr-topunseen-table tbody');
+    tbody.querySelectorAll('tr[data-modname]').forEach(function(row) {
+        row.style.display = hiddenTypes.indexOf(row.dataset.modname) >= 0 ? 'none' : '';
+    });
+}
+
+/* ── Buscador de estudiantes ───────────────────────────────────────────────── */
+function crSearchStudents(q) {
+    var needle = q.trim().toLowerCase();
+    var tbody  = document.querySelector('#cr-students-table tbody');
+    tbody.querySelectorAll('tr.cr-student-row').forEach(function(row) {
+        var name  = row.querySelector('td').textContent.trim().toLowerCase();
+        var match = needle === '' || name.indexOf(needle) >= 0;
+        row.style.display = match ? '' : 'none';
+        if (!match) {
+            var dr = document.getElementById(row.dataset.detail);
+            if (dr) { dr.style.display = 'none'; }
+        }
+    });
+}
+
+/* ── Filtros de recursos (tipos + ocultas): función central ────────────────── */
+function crApplyFilters() {
+    var cb = document.getElementById('cr-show-hidden');
+    var showHidden = cb ? cb.checked : true;
+
+    var hiddenTypes = [];
+    document.querySelectorAll('.cr-type-filter-btn').forEach(function(b) {
+        if (!b.classList.contains('cr-type-active')) { hiddenTypes.push(b.dataset.modname); }
+    });
+
+    var tbody = document.querySelector('#cr-resources-table tbody');
+    tbody.querySelectorAll('tr.cr-resource-row').forEach(function(row) {
+        var isHiddenActivity = row.dataset.hidden === '1';
+        var isTypeFiltered   = hiddenTypes.indexOf(row.dataset.modname) >= 0;
+        var hide = (!showHidden && isHiddenActivity) || isTypeFiltered;
+        row.style.display = hide ? 'none' : '';
+        if (hide) {
+            var dr = document.getElementById(row.dataset.detail);
+            if (dr) { dr.style.display = 'none'; }
+        }
+    });
+
+    var inSortMode = document.getElementById('cr-sort-notice').style.display === 'block';
+    if (!inSortMode) {
+        tbody.querySelectorAll('tr.cr-section-row').forEach(function(srow) {
+            var snum = srow.dataset.sectionid;
+            var hasVisible = false;
+            tbody.querySelectorAll('tr.cr-resource-row[data-section="' + snum + '"]').forEach(function(r) {
+                if (r.style.display !== 'none') { hasVisible = true; }
+            });
+            srow.style.display = hasVisible ? '' : 'none';
+        });
+    }
+}
+
+function crFilterType(btn) {
+    var wasActive = btn.classList.contains('cr-type-active');
+    if (wasActive) {
+        btn.classList.remove('cr-type-active', 'btn-primary');
+        btn.classList.add('btn-outline-secondary');
+    } else {
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('cr-type-active', 'btn-primary');
+    }
+    crApplyFilters();
+}
+
+function crToggleHidden() { crApplyFilters(); }
 
 /* ── Ordenar tabla de estudiantes ──────────────────────────────────────────── */
 function crSortStudents(th, isNumeric) {
@@ -574,7 +714,7 @@ function crSortStudents(th, isNumeric) {
 
 <!-- ── Tarjetas de resumen ───────────────────────────────────────────────── -->
 <div class="row g-3 mb-4">
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg">
     <div class="card cr-card h-100 border-0 border-start border-primary border-4">
       <div class="card-body">
         <div class="cr-stat text-primary"><?php echo $totalmodules; ?></div>
@@ -582,7 +722,7 @@ function crSortStudents(th, isNumeric) {
       </div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg">
     <div class="card cr-card h-100 border-0 border-start border-success border-4">
       <div class="card-body">
         <div class="cr-stat text-success"><?php echo number_format($totalinteractions); ?></div>
@@ -590,7 +730,15 @@ function crSortStudents(th, isNumeric) {
       </div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg">
+    <div class="card cr-card h-100 border-0 border-start border-secondary border-4">
+      <div class="card-body">
+        <div class="cr-stat text-secondary"><?php echo number_format($totalcoursevisits); ?></div>
+        <div class="cr-stat-label"><?php echo get_string('coursevisits', 'report_courseradar'); ?></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
     <div class="card cr-card h-100 border-0 border-start border-info border-4">
       <div class="card-body">
         <div class="cr-stat text-info"><?php echo $avgengagement; ?>%</div>
@@ -603,7 +751,7 @@ function crSortStudents(th, isNumeric) {
       </div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg">
     <div class="card cr-card h-100 border-0 border-start border-warning border-4">
       <div class="card-body">
         <div class="cr-maxname text-warning"><?php echo $maxname; ?></div>
@@ -625,7 +773,7 @@ function crSortStudents(th, isNumeric) {
     <h5 class="mb-0 fw-bold text-danger">
       <?php echo $OUTPUT->pix_icon('i/warning', '', 'core', ['class' => 'me-1']); ?>
       <?php echo get_string('atrisk', 'report_courseradar'); ?>
-      <span class="badge bg-danger ms-2"><?php echo $totalrisk; ?></span>
+      <span class="badge bg-danger text-white ms-2"><?php echo $totalrisk; ?></span>
     </h5>
     <small class="text-muted"><?php echo get_string('atrisk_info', 'report_courseradar'); ?></small>
   </div>
@@ -637,7 +785,7 @@ function crSortStudents(th, isNumeric) {
         <h6 class="fw-bold text-danger mb-2">
           <?php echo $OUTPUT->pix_icon('i/invalid', '', 'core', ['class' => 'me-1']); ?>
           <?php echo get_string('atrisk_noactivity', 'report_courseradar'); ?>
-          <span class="badge bg-danger ms-1"><?php echo count($atrisknone); ?></span>
+          <span class="badge bg-danger text-white ms-1"><?php echo count($atrisknone); ?></span>
         </h6>
         <div class="cr-risk-names">
           <?php foreach ($atrisknone as $uid => $stu): ?>
@@ -687,9 +835,22 @@ function crSortStudents(th, isNumeric) {
     </h5>
     <small class="text-muted"><?php echo get_string('topunseeninfo', 'report_courseradar'); ?></small>
   </div>
+  <?php if (count($topunseentypes) > 1): ?>
+  <div class="px-3 pt-3 pb-2 border-bottom d-flex flex-wrap gap-3 align-items-center">
+    <small class="text-muted fw-semibold me-1"><?php echo get_string('filterbytype', 'report_courseradar'); ?></small>
+    <?php foreach ($topunseentypes as $mod): ?>
+    <button type="button"
+            class="btn btn-sm btn-warning cr-topunseen-filter-btn cr-type-active cr-badge-mod me-2 mb-1"
+            data-modname="<?php echo s($mod); ?>"
+            onclick="crFilterTopUnseen(this,'<?php echo s($mod); ?>')">
+      <?php echo s($mod); ?>
+    </button>
+    <?php endforeach; ?>
+  </div>
+  <?php endif; ?>
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle mb-0">
+      <table class="table table-sm table-hover align-middle mb-0" id="cr-topunseen-table">
         <thead class="table-light">
           <tr>
             <th style="width:2rem">#</th>
@@ -707,7 +868,7 @@ function crSortStudents(th, isNumeric) {
           $pct     = $item['pct'];
           $barclass = report_courseradar_barclass($pct);
         ?>
-        <tr>
+        <tr data-modname="<?php echo s($cm->modname); ?>">
           <td class="text-muted fw-bold"><?php echo $rank + 1; ?></td>
           <td>
             <img src="<?php echo $iconurl; ?>" alt="" style="width:18px;height:18px;" class="me-1">
@@ -866,16 +1027,39 @@ function crSortStudents(th, isNumeric) {
       <?php echo get_string('resourceactivity', 'report_courseradar'); ?>
       <span class="badge bg-secondary ms-2"><?php echo $totalmodules; ?></span>
     </h5>
-    <span id="cr-sort-notice" class="text-muted small">
-      <a href="javascript:crResetSort()" class="btn btn-sm btn-outline-secondary">
-        <?php echo get_string('resetsort', 'report_courseradar'); ?>
-      </a>
-    </span>
+    <div class="d-flex align-items-center gap-3">
+      <?php if ($hashidden): ?>
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" id="cr-show-hidden" onchange="crToggleHidden()">
+        <label class="form-check-label small text-muted" for="cr-show-hidden">
+          <?php echo get_string('showhidden', 'report_courseradar'); ?>
+        </label>
+      </div>
+      <?php endif; ?>
+      <span id="cr-sort-notice" class="text-muted small">
+        <a href="javascript:crResetSort()" class="btn btn-sm btn-outline-secondary">
+          <?php echo get_string('resetsort', 'report_courseradar'); ?>
+        </a>
+      </span>
+    </div>
   </div>
+  <?php if (count($bytype) > 1): ?>
+  <div class="px-3 pt-3 pb-2 border-bottom d-flex flex-wrap gap-3 align-items-center">
+    <small class="text-muted fw-semibold me-1"><?php echo get_string('filterbytype', 'report_courseradar'); ?></small>
+    <?php foreach (array_keys($bytype) as $mod): ?>
+    <button type="button"
+            class="btn btn-sm btn-primary cr-type-filter-btn cr-type-active cr-badge-mod me-2 mb-1"
+            data-modname="<?php echo s($mod); ?>"
+            onclick="crFilterType(this)">
+      <?php echo s($mod); ?>
+    </button>
+    <?php endforeach; ?>
+  </div>
+  <?php endif; ?>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0" id="cr-resources-table">
-        <thead class="table-dark">
+        <thead class="table-light border-bottom border-2">
           <tr>
             <th class="cr-th-sort" onclick="crSortResources(this,false)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
@@ -888,24 +1072,39 @@ function crSortStudents(th, isNumeric) {
             <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('totalviews', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('totalviews_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('uniquestudents', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('uniquestudents_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="cr-th-sort" style="min-width:160px" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('coverage', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('coverage_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <?php if ($hasanycompletion): ?>
             <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('completion', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('completion_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <?php endif; ?>
             <th class="cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('lastaccess', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('lastaccess_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
           </tr>
@@ -921,7 +1120,7 @@ function crSortStudents(th, isNumeric) {
 <?php else: ?>
 
 <?php foreach ($bysection as $snum => $section): ?>
-          <tr class="cr-section-row">
+          <tr class="cr-section-row" data-sectionid="<?php echo $snum; ?>">
             <td colspan="<?php echo $rescols; ?>">
               <?php echo $OUTPUT->pix_icon('i/folder', '', 'core', ['class' => 'me-1']); ?>
               <?php echo $section['name']; ?>
@@ -948,7 +1147,10 @@ function crSortStudents(th, isNumeric) {
     $cmplpct     = ($hastracking && $totalstudents > 0) ? min(100, round(($cmplcount / $totalstudents) * 100)) : -1;
   ?>
           <tr class="cr-resource-row<?php echo !$cm->visible ? ' text-muted' : ''; ?>"
-              data-detail="<?php echo $detailid; ?>">
+              data-detail="<?php echo $detailid; ?>"
+              data-modname="<?php echo s($cm->modname); ?>"
+              data-section="<?php echo $snum; ?>"
+              <?php if (!$cm->visible): ?>data-hidden="1"<?php endif; ?>>
 
             <!-- Nombre -->
             <td data-sort="<?php echo s(format_string($cm->name)); ?>">
@@ -1136,10 +1338,17 @@ function crSortStudents(th, isNumeric) {
       <span class="badge bg-secondary ms-2"><?php echo $totalstudents; ?></span>
     </h5>
   </div>
+  <?php if ($totalstudents > 5): ?>
+  <div class="px-3 pt-3 pb-2 border-bottom">
+    <input type="search" class="form-control form-control-sm" id="cr-student-search"
+           placeholder="<?php echo get_string('searchstudent', 'report_courseradar'); ?>"
+           oninput="crSearchStudents(this.value)">
+  </div>
+  <?php endif; ?>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0" id="cr-students-table">
-        <thead class="table-dark">
+        <thead class="table-light border-bottom border-2">
           <tr>
             <th class="cr-th-sort" onclick="crSortStudents(this,false)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
@@ -1148,22 +1357,44 @@ function crSortStudents(th, isNumeric) {
             <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('resourcesvisited', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('resourcesvisited_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="cr-th-sort" style="min-width:160px" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('coverage', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('studentcoverage_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('totalviews', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('studentviews_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
+            <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('coursevisits', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('coursevisits_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('lastactivity', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('lastactivity_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="cr-th-sort text-center" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('daysinactive', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('daysinactive_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
           </tr>
@@ -1172,7 +1403,7 @@ function crSortStudents(th, isNumeric) {
 
 <?php if (empty($students)): ?>
           <tr>
-            <td colspan="7" class="text-center text-muted py-5">
+            <td colspan="8" class="text-center text-muted py-5">
               <?php echo get_string('nostudents', 'report_courseradar'); ?>
             </td>
           </tr>
@@ -1230,6 +1461,12 @@ function crSortStudents(th, isNumeric) {
               <?php echo $totalv; ?>
             </td>
 
+            <?php $cvisits = $coursevisits[$uid] ?? 0; ?>
+            <td class="text-center fw-bold <?php echo $cvisits === 0 ? 'cr-zero' : ''; ?>"
+                data-sort="<?php echo $cvisits; ?>">
+              <?php echo $cvisits; ?>
+            </td>
+
             <td data-sort="<?php echo $lastact; ?>">
               <small class="text-muted">
                 <?php echo $lastact
@@ -1269,7 +1506,7 @@ function crSortStudents(th, isNumeric) {
 
           <!-- Detalle del estudiante -->
           <tr id="<?php echo $studetailid; ?>" class="cr-detail-row" style="display:none;">
-            <td colspan="6">
+            <td colspan="7">
               <div class="cr-detail-inner p-3">
                 <?php foreach ($bysection as $snum => $section): ?>
                 <div class="mb-2">
@@ -1312,6 +1549,8 @@ function crSortStudents(th, isNumeric) {
                     <?php foreach ($sparklines[$uid] as $bar): ?>
                     <div class="cr-spark-bar"
                          style="height:<?php echo $bar['height']; ?>%"
+                         data-bs-toggle="tooltip"
+                         data-bs-placement="top"
                          title="<?php echo s($bar['label']); ?>: <?php echo $bar['cnt']; ?> <?php echo get_string('times', 'report_courseradar'); ?>">
                     </div>
                     <?php endforeach; ?>

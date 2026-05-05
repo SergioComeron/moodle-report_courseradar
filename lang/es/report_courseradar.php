@@ -36,18 +36,26 @@ $string['avgengagement']       = 'Participación media';
 $string['avgviews'] = 'Media de vistas / módulo';
 $string['completednoftrack']   = 'Sin rastreo de finalización';
 $string['completion']          = 'Finalización';
+$string['completion_desc']     = 'Alumnos que lo han completado';
 $string['completiondisabled']  = 'La finalización de actividades no está habilitada en este curso.';
 $string['courseradar:view']    = 'Ver informe Course Radar';
+$string['coursevisits']        = 'Visitas al curso';
+$string['coursevisits_desc']   = 'Veces que los alumnos han accedido al curso';
 $string['coverage']            = 'Cobertura';
+$string['coverage_desc']       = '% alumnos matriculados que lo han visto';
 $string['datefrom']            = 'Desde';
 $string['dateto']              = 'Hasta';
 $string['daysinactive']    = 'Días sin actividad';
+$string['daysinactive_desc']   = 'Días desde la última interacción';
 $string['details']             = 'Detalle';
+$string['filterbytype']        = 'Filtrar por tipo:';
 $string['haventviewed']        = 'No han visto';
 $string['haveviewed']          = 'Han visto';
 $string['hidden']              = 'Oculto';
 $string['lastaccess']          = 'Último acceso';
+$string['lastaccess_desc']     = 'Fecha del último acceso registrado';
 $string['lastactivity']        = 'Última actividad';
+$string['lastactivity_desc']   = 'Interacción más reciente con un recurso';
 $string['modules'] = 'Módulos';
 $string['moduletypesummary'] = 'Interacciones por tipo de recurso';
 $string['mostviewed']          = 'Más visitado';
@@ -62,14 +70,19 @@ $string['plugindesc']          = 'Seguimiento de las interacciones de los estudi
 $string['pluginname']          = 'Course Radar';
 
 $string['resetfilter']         = 'Restablecer';
+$string['searchstudent']       = 'Buscar alumno...';
+$string['showhidden']          = 'Mostrar actividades ocultas';
 
 $string['resetsort']           = 'Volver a vista por secciones';
 $string['resource']            = 'Recurso / Actividad';
 $string['resourceactivity']    = 'Recursos y Actividades';
 $string['resourcesvisited']    = 'Recursos visitados';
+$string['resourcesvisited_desc'] = 'Recursos distintos abiertos';
 $string['sortby']              = 'Haz clic para ordenar';
 $string['student']             = 'Estudiante';
+$string['studentcoverage_desc'] = '% de recursos del curso visitados';
 $string['studentengagement']   = 'Actividad por estudiante';
+$string['studentviews_desc']   = 'Accesos totales a todos los recursos';
 $string['times']               = 'vistas';
 $string['topunseen']       = 'Recursos menos visitados';
 $string['topunseeninfo']   = 'Recursos visibles con menor cobertura (excluidos los vistos por todos).';
@@ -77,8 +90,10 @@ $string['totalinteractions']   = 'Interacciones totales';
 $string['totalresources']      = 'Recursos totales';
 
 $string['totalviews']          = 'Vistas totales';
+$string['totalviews_desc']     = 'Accesos totales de todos los alumnos';
 $string['type']                = 'Tipo';
 $string['uniquestudents']      = 'Estudiantes';
+$string['uniquestudents_desc'] = 'Alumnos únicos / matriculados';
 
 $string['viewprofile']         = 'Ver perfil';
 

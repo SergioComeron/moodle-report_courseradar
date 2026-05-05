@@ -36,18 +36,26 @@ $string['avgengagement']       = 'Avg. engagement';
 $string['avgviews'] = 'Avg. views / module';
 $string['completednoftrack']   = 'No completion tracking';
 $string['completion']          = 'Completion';
+$string['completion_desc']     = 'Students who completed it';
 $string['completiondisabled']  = 'Activity completion is not enabled for this course.';
 $string['courseradar:view']    = 'View Course Radar report';
+$string['coursevisits']        = 'Course visits';
+$string['coursevisits_desc']   = 'Times students accessed the course home';
 $string['coverage']            = 'Coverage';
+$string['coverage_desc']       = '% enrolled students who viewed it';
 $string['datefrom']            = 'From';
 $string['dateto']              = 'To';
 $string['daysinactive']    = 'Days inactive';
+$string['daysinactive_desc']   = 'Days since last interaction';
 $string['details']             = 'Detail';
+$string['filterbytype']        = 'Filter by type:';
 $string['haventviewed']        = "Haven't viewed";
 $string['haveviewed']          = 'Have viewed';
 $string['hidden']              = 'Hidden';
 $string['lastaccess']          = 'Last access';
+$string['lastaccess_desc']     = 'Date of last recorded access';
 $string['lastactivity']        = 'Last activity';
+$string['lastactivity_desc']   = 'Most recent resource interaction';
 $string['modules'] = 'Modules';
 $string['moduletypesummary'] = 'Interactions by resource type';
 $string['mostviewed']          = 'Most viewed';
@@ -62,14 +70,18 @@ $string['plugindesc']          = 'Track student interactions with course resourc
 $string['pluginname']          = 'Course Radar';
 
 $string['resetfilter']         = 'Reset';
-
 $string['resetsort']           = 'Back to section view';
 $string['resource']            = 'Resource / Activity';
 $string['resourceactivity']    = 'Resources & Activities';
 $string['resourcesvisited']    = 'Resources visited';
+$string['resourcesvisited_desc'] = 'Different resources opened';
+$string['searchstudent']       = 'Search student...';
+$string['showhidden']          = 'Show hidden activities';
 $string['sortby']              = 'Click to sort';
 $string['student']             = 'Student';
+$string['studentcoverage_desc'] = '% of course resources visited';
 $string['studentengagement']   = 'Student Engagement';
+$string['studentviews_desc']   = 'Total accesses to all resources';
 $string['times']               = 'views';
 $string['topunseen']       = 'Least visited resources';
 $string['topunseeninfo']   = 'Visible resources with lowest student coverage (100% excluded).';
@@ -77,8 +89,10 @@ $string['totalinteractions']   = 'Total interactions';
 $string['totalresources']      = 'Total resources';
 
 $string['totalviews']          = 'Total views';
+$string['totalviews_desc']     = 'Total accesses by all students';
 $string['type']                = 'Type';
 $string['uniquestudents']      = 'Students';
+$string['uniquestudents_desc'] = 'Unique students / enrolled';
 
 $string['viewprofile']         = 'View profile';
 
