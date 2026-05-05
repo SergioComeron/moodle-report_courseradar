@@ -71,6 +71,7 @@ $string['pluginname']          = 'Course Radar';
 
 $string['resetfilter']         = 'Restablecer';
 $string['searchstudent']       = 'Buscar alumno...';
+$string['showhidden']          = 'Mostrar actividades ocultas';
 
 $string['resetsort']           = 'Volver a vista por secciones';
 $string['resource']            = 'Recurso / Actividad';

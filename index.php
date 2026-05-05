@@ -428,6 +428,15 @@ foreach ($validcms as $cmid => $cm) {
 }
 ksort($bysection);
 
+// Whether the course has hidden activities (drives the show/hide toggle).
+$hashidden = false;
+foreach ($validcms as $cm) {
+    if (!$cm->visible) {
+        $hashidden = true;
+        break;
+    }
+}
+
 // Number of resource table columns (varies when completion is enabled).
 $rescols = $hasanycompletion ? 8 : 7;
 
@@ -481,6 +490,7 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 <script>
 /* ── Inicializar tooltips Bootstrap ───────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function() {
+    crApplyFilters();
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
         new bootstrap.Tooltip(el);
     });
@@ -572,16 +582,10 @@ function crSearchStudents(q) {
     });
 }
 
-/* ── Filtro de tipos de recurso ────────────────────────────────────────────── */
-function crFilterType(btn, modname) {
-    var wasActive = btn.classList.contains('cr-type-active');
-    if (wasActive) {
-        btn.classList.remove('cr-type-active', 'btn-primary');
-        btn.classList.add('btn-outline-secondary');
-    } else {
-        btn.classList.remove('btn-outline-secondary');
-        btn.classList.add('cr-type-active', 'btn-primary');
-    }
+/* ── Filtros de recursos (tipos + ocultas): función central ────────────────── */
+function crApplyFilters() {
+    var cb = document.getElementById('cr-show-hidden');
+    var showHidden = cb ? cb.checked : true;
 
     var hiddenTypes = [];
     document.querySelectorAll('.cr-type-filter-btn').forEach(function(b) {
@@ -590,7 +594,9 @@ function crFilterType(btn, modname) {
 
     var tbody = document.querySelector('#cr-resources-table tbody');
     tbody.querySelectorAll('tr.cr-resource-row').forEach(function(row) {
-        var hide = hiddenTypes.indexOf(row.dataset.modname) >= 0;
+        var isHiddenActivity = row.dataset.hidden === '1';
+        var isTypeFiltered   = hiddenTypes.indexOf(row.dataset.modname) >= 0;
+        var hide = (!showHidden && isHiddenActivity) || isTypeFiltered;
         row.style.display = hide ? 'none' : '';
         if (hide) {
             var dr = document.getElementById(row.dataset.detail);
@@ -610,6 +616,20 @@ function crFilterType(btn, modname) {
         });
     }
 }
+
+function crFilterType(btn) {
+    var wasActive = btn.classList.contains('cr-type-active');
+    if (wasActive) {
+        btn.classList.remove('cr-type-active', 'btn-primary');
+        btn.classList.add('btn-outline-secondary');
+    } else {
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('cr-type-active', 'btn-primary');
+    }
+    crApplyFilters();
+}
+
+function crToggleHidden() { crApplyFilters(); }
 
 /* ── Ordenar tabla de estudiantes ──────────────────────────────────────────── */
 function crSortStudents(th, isNumeric) {
@@ -1007,11 +1027,21 @@ function crSortStudents(th, isNumeric) {
       <?php echo get_string('resourceactivity', 'report_courseradar'); ?>
       <span class="badge bg-secondary ms-2"><?php echo $totalmodules; ?></span>
     </h5>
-    <span id="cr-sort-notice" class="text-muted small">
-      <a href="javascript:crResetSort()" class="btn btn-sm btn-outline-secondary">
-        <?php echo get_string('resetsort', 'report_courseradar'); ?>
-      </a>
-    </span>
+    <div class="d-flex align-items-center gap-3">
+      <?php if ($hashidden): ?>
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" id="cr-show-hidden" onchange="crToggleHidden()">
+        <label class="form-check-label small text-muted" for="cr-show-hidden">
+          <?php echo get_string('showhidden', 'report_courseradar'); ?>
+        </label>
+      </div>
+      <?php endif; ?>
+      <span id="cr-sort-notice" class="text-muted small">
+        <a href="javascript:crResetSort()" class="btn btn-sm btn-outline-secondary">
+          <?php echo get_string('resetsort', 'report_courseradar'); ?>
+        </a>
+      </span>
+    </div>
   </div>
   <?php if (count($bytype) > 1): ?>
   <div class="px-3 pt-3 pb-2 border-bottom d-flex flex-wrap gap-3 align-items-center">
@@ -1020,7 +1050,7 @@ function crSortStudents(th, isNumeric) {
     <button type="button"
             class="btn btn-sm btn-primary cr-type-filter-btn cr-type-active cr-badge-mod me-2 mb-1"
             data-modname="<?php echo s($mod); ?>"
-            onclick="crFilterType(this,'<?php echo s($mod); ?>')">
+            onclick="crFilterType(this)">
       <?php echo s($mod); ?>
     </button>
     <?php endforeach; ?>
@@ -1119,7 +1149,8 @@ function crSortStudents(th, isNumeric) {
           <tr class="cr-resource-row<?php echo !$cm->visible ? ' text-muted' : ''; ?>"
               data-detail="<?php echo $detailid; ?>"
               data-modname="<?php echo s($cm->modname); ?>"
-              data-section="<?php echo $snum; ?>">
+              data-section="<?php echo $snum; ?>"
+              <?php if (!$cm->visible): ?>data-hidden="1"<?php endif; ?>>
 
             <!-- Nombre -->
             <td data-sort="<?php echo s(format_string($cm->name)); ?>">
