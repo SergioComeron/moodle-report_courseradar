@@ -44,17 +44,18 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: courseradar
 
       - name: Update Moodle internal version to today
         run: |
           MOODLE_VER=$(date +%Y%m%d)00
-          sed -i "s/\$plugin->version.*=.*;/\$plugin->version   = $MOODLE_VER;/" version.php
+          sed -i "s/\$plugin->version.*=.*;/\$plugin->version   = $MOODLE_VER;/" courseradar/version.php
 
       - name: Build installable ZIP
         run: |
           TAG="${{ needs.release-please.outputs.tag_name }}"
           ZIPNAME="report_courseradar-${TAG}.zip"
-          cd ..
           zip -r "$ZIPNAME" courseradar \
             --exclude "courseradar/.git/*" \
             --exclude "courseradar/.github/*" \
@@ -64,10 +65,9 @@ jobs:
             --exclude "courseradar/.githooks/*" \
             --exclude "courseradar/release-please-config.json" \
             --exclude "courseradar/.release-please-manifest.json"
-          mv "$ZIPNAME" courseradar/
 
       - name: Attach ZIP to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
-          files: report_courseradar-*.zip
+          files: "*.zip"
