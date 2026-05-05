@@ -22,7 +22,6 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
 
 /**
  * Returns the Bootstrap progress bar colour class based on a percentage.
@@ -67,7 +66,7 @@ function report_courseradar_get_students(\context_course $context): array {
             $students[$u->id] = $u;
         }
     }
-    uasort($students, function($a, $b) {
+    uasort($students, function ($a, $b) {
         return strcmp($a->lastname . $a->firstname, $b->lastname . $b->firstname);
     });
     return $students;

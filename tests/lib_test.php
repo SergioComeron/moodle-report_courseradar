@@ -32,8 +32,7 @@ require_once($CFG->dirroot . '/report/courseradar/locallib.php');
  * @covers     ::report_courseradar_atrisk
  */
 final class lib_test extends \advanced_testcase {
-
-    // ── report_courseradar_barclass ───────────────────────────────────────────
+    // Tests for report_courseradar_barclass.
 
     /**
      * Test that 70% or above returns the success class.
@@ -59,7 +58,7 @@ final class lib_test extends \advanced_testcase {
         $this->assertEquals('bg-danger', report_courseradar_barclass(29));
     }
 
-    // ── report_courseradar_atrisk ─────────────────────────────────────────────
+    // Tests for report_courseradar_atrisk.
 
     /**
      * Test that a student with zero views is placed in the none bucket.
@@ -108,7 +107,7 @@ final class lib_test extends \advanced_testcase {
         $this->assertEmpty($result['low']);
     }
 
-    // ── report_courseradar_get_students ───────────────────────────────────────
+    // Tests for report_courseradar_get_students.
 
     /**
      * Test that teachers are excluded and students are included.
@@ -153,10 +152,16 @@ final class lib_test extends \advanced_testcase {
         $course   = $this->getDataGenerator()->create_course();
         $context  = \context_course::instance($course->id);
 
-        $s1 = $this->getDataGenerator()->create_and_enrol($course, 'student',
-            ['firstname' => 'Ana', 'lastname' => 'Zorro']);
-        $s2 = $this->getDataGenerator()->create_and_enrol($course, 'student',
-            ['firstname' => 'Luis', 'lastname' => 'Álvarez']);
+        $s1 = $this->getDataGenerator()->create_and_enrol(
+            $course,
+            'student',
+            ['firstname' => 'Ana', 'lastname' => 'Zorro']
+        );
+        $s2 = $this->getDataGenerator()->create_and_enrol(
+            $course,
+            'student',
+            ['firstname' => 'Luis', 'lastname' => 'Álvarez']
+        );
 
         $students = report_courseradar_get_students($context);
         $keys = array_keys($students);
@@ -165,7 +170,7 @@ final class lib_test extends \advanced_testcase {
         $this->assertEquals($s1->id, $keys[1]);
     }
 
-    // ── Capability checks ─────────────────────────────────────────────────────
+    // Capability checks.
 
     /**
      * Test that teachers have the view capability.

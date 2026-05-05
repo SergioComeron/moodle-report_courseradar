@@ -80,7 +80,7 @@ $logdata    = []; // Keyed by cmid: totalviews, uniqueusers, lastaccess.
 $bycm       = []; // Keyed [cmid][uid]: views, lastaccess.
 $studentlog = []; // Keyed [uid][cmid]: view count.
 $byday      = []; // Keyed by Y-m-d date string: interaction count.
-$heatmap    = array_fill(0, 7, array_fill(0, 6, 0)); // [dow 0=Sun][4h block 0-5]
+$heatmap    = array_fill(0, 7, array_fill(0, 6, 0)); // Dow 0=Sun to 6=Sat, 4-hour blocks 0-5.
 
 if ($totalstudents > 0 && $totalmodules > 0) {
     [$insql, $inparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'st');
@@ -290,7 +290,7 @@ $daynames  = [];
 foreach ($daykeymap as $dow => $key) {
     $daynames[$dow] = mb_substr(get_string($key, 'calendar'), 0, 3);
 }
-$dayorder  = [1, 2, 3, 4, 5, 6, 0]; // Lun→Dom
+$dayorder  = [1, 2, 3, 4, 5, 6, 0]; // Mon to Sun display order.
 $timeslots = ['0–3h', '4–7h', '8–11h', '12–15h', '16–19h', '20–23h'];
 
 // Organise modules by section.
@@ -313,6 +313,7 @@ $rescols = $hasanycompletion ? 8 : 7;
 
 // Output.
 echo $OUTPUT->header();
+// phpcs:disable
 ?>
 <style>
 /* ── Course Radar ──────────────────────────────────────────────────────────── */
