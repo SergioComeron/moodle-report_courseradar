@@ -70,6 +70,7 @@ $string['plugindesc']          = 'Track student interactions with course resourc
 $string['pluginname']          = 'Course Radar';
 
 $string['resetfilter']         = 'Reset';
+$string['searchstudent']       = 'Search student...';
 
 $string['resetsort']           = 'Back to section view';
 $string['resource']            = 'Resource / Activity';

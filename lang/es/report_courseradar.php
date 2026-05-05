@@ -70,6 +70,7 @@ $string['plugindesc']          = 'Seguimiento de las interacciones de los estudi
 $string['pluginname']          = 'Course Radar';
 
 $string['resetfilter']         = 'Restablecer';
+$string['searchstudent']       = 'Buscar alumno...';
 
 $string['resetsort']           = 'Volver a vista por secciones';
 $string['resource']            = 'Recurso / Actividad';

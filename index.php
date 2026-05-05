@@ -557,6 +557,21 @@ function crFilterTopUnseen(btn, modname) {
     });
 }
 
+/* ── Buscador de estudiantes ───────────────────────────────────────────────── */
+function crSearchStudents(q) {
+    var needle = q.trim().toLowerCase();
+    var tbody  = document.querySelector('#cr-students-table tbody');
+    tbody.querySelectorAll('tr.cr-student-row').forEach(function(row) {
+        var name  = row.querySelector('td').textContent.trim().toLowerCase();
+        var match = needle === '' || name.indexOf(needle) >= 0;
+        row.style.display = match ? '' : 'none';
+        if (!match) {
+            var dr = document.getElementById(row.dataset.detail);
+            if (dr) { dr.style.display = 'none'; }
+        }
+    });
+}
+
 /* ── Filtro de tipos de recurso ────────────────────────────────────────────── */
 function crFilterType(btn, modname) {
     var wasActive = btn.classList.contains('cr-type-active');
@@ -1292,6 +1307,13 @@ function crSortStudents(th, isNumeric) {
       <span class="badge bg-secondary ms-2"><?php echo $totalstudents; ?></span>
     </h5>
   </div>
+  <?php if ($totalstudents > 5): ?>
+  <div class="px-3 pt-3 pb-2 border-bottom">
+    <input type="search" class="form-control form-control-sm" id="cr-student-search"
+           placeholder="<?php echo get_string('searchstudent', 'report_courseradar'); ?>"
+           oninput="crSearchStudents(this.value)">
+  </div>
+  <?php endif; ?>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0" id="cr-students-table">
