@@ -764,7 +764,7 @@ function crSortStudents(th, isNumeric) {
     <small class="text-muted fw-semibold me-1"><?php echo get_string('filterbytype', 'report_courseradar'); ?></small>
     <?php foreach ($topunseentypes as $mod): ?>
     <button type="button"
-            class="btn btn-sm btn-warning cr-topunseen-filter-btn cr-type-active cr-badge-mod"
+            class="btn btn-sm btn-warning cr-topunseen-filter-btn cr-type-active cr-badge-mod me-2 mb-1"
             data-modname="<?php echo s($mod); ?>"
             onclick="crFilterTopUnseen(this,'<?php echo s($mod); ?>')">
       <?php echo s($mod); ?>
@@ -962,7 +962,7 @@ function crSortStudents(th, isNumeric) {
     <small class="text-muted fw-semibold me-1"><?php echo get_string('filterbytype', 'report_courseradar'); ?></small>
     <?php foreach (array_keys($bytype) as $mod): ?>
     <button type="button"
-            class="btn btn-sm btn-primary cr-type-filter-btn cr-type-active cr-badge-mod"
+            class="btn btn-sm btn-primary cr-type-filter-btn cr-type-active cr-badge-mod me-2 mb-1"
             data-modname="<?php echo s($mod); ?>"
             onclick="crFilterType(this,'<?php echo s($mod); ?>')">
       <?php echo s($mod); ?>
