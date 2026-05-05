@@ -439,7 +439,6 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-heatmap td        { border-radius: 4px; padding: 5px 4px; text-align: center; min-width: 36px; cursor: default; }
 /* Ordenación */
 .cr-th-sort           { cursor: pointer; user-select: none; white-space: nowrap; }
-.cr-th-sort:hover     { background: rgba(255,255,255,.12) !important; }
 .cr-th-sort::after    { content: ' ⇅'; opacity: .35; font-size: .75em; }
 .cr-th-asc::after     { content: ' ▲'; opacity: 1; }
 .cr-th-desc::after    { content: ' ▼'; opacity: 1; }
