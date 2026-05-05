@@ -43,6 +43,7 @@ $string['datefrom']            = 'Desde';
 $string['dateto']              = 'Hasta';
 $string['daysinactive']    = 'Días sin actividad';
 $string['details']             = 'Detalle';
+$string['filterbytype']        = 'Filtrar por tipo:';
 $string['haventviewed']        = 'No han visto';
 $string['haveviewed']          = 'Han visto';
 $string['hidden']              = 'Oculto';

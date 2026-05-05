@@ -440,6 +440,8 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-spark-bar         { flex: 1; min-width: 3px; border-radius: 2px 2px 0 0; background: #0d6efd; opacity: .75; transition: opacity .15s; cursor: default; }
 .cr-spark-bar:hover   { opacity: 1; }
 .cr-spark-empty       { color: #adb5bd; font-size: .8rem; }
+/* Filtro de tipos */
+.cr-type-filter-btn   { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; transition: all .15s; }
 </style>
 <script>
 /* ── Toggle fila de detalle ────────────────────────────────────────────────── */
@@ -490,6 +492,45 @@ function crSortResources(th, isNumeric) {
 }
 
 function crResetSort() { location.reload(); }
+
+/* ── Filtro de tipos de recurso ────────────────────────────────────────────── */
+function crFilterType(btn, modname) {
+    var wasActive = btn.classList.contains('cr-type-active');
+    if (wasActive) {
+        btn.classList.remove('cr-type-active', 'btn-primary');
+        btn.classList.add('btn-outline-secondary');
+    } else {
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('cr-type-active', 'btn-primary');
+    }
+
+    var hiddenTypes = [];
+    document.querySelectorAll('.cr-type-filter-btn').forEach(function(b) {
+        if (!b.classList.contains('cr-type-active')) { hiddenTypes.push(b.dataset.modname); }
+    });
+
+    var tbody = document.querySelector('#cr-resources-table tbody');
+    tbody.querySelectorAll('tr.cr-resource-row').forEach(function(row) {
+        var hide = hiddenTypes.indexOf(row.dataset.modname) >= 0;
+        row.style.display = hide ? 'none' : '';
+        if (hide) {
+            var dr = document.getElementById(row.dataset.detail);
+            if (dr) { dr.style.display = 'none'; }
+        }
+    });
+
+    var inSortMode = document.getElementById('cr-sort-notice').style.display === 'block';
+    if (!inSortMode) {
+        tbody.querySelectorAll('tr.cr-section-row').forEach(function(srow) {
+            var snum = srow.dataset.sectionid;
+            var hasVisible = false;
+            tbody.querySelectorAll('tr.cr-resource-row[data-section="' + snum + '"]').forEach(function(r) {
+                if (r.style.display !== 'none') { hasVisible = true; }
+            });
+            srow.style.display = hasVisible ? '' : 'none';
+        });
+    }
+}
 
 /* ── Ordenar tabla de estudiantes ──────────────────────────────────────────── */
 function crSortStudents(th, isNumeric) {
@@ -872,6 +913,19 @@ function crSortStudents(th, isNumeric) {
       </a>
     </span>
   </div>
+  <?php if (count($bytype) > 1): ?>
+  <div class="px-3 pt-3 pb-2 border-bottom d-flex flex-wrap gap-2 align-items-center">
+    <small class="text-muted fw-semibold me-1"><?php echo get_string('filterbytype', 'report_courseradar'); ?></small>
+    <?php foreach (array_keys($bytype) as $mod): ?>
+    <button type="button"
+            class="btn btn-sm btn-primary cr-type-filter-btn cr-type-active cr-badge-mod"
+            data-modname="<?php echo s($mod); ?>"
+            onclick="crFilterType(this,'<?php echo s($mod); ?>')">
+      <?php echo s($mod); ?>
+    </button>
+    <?php endforeach; ?>
+  </div>
+  <?php endif; ?>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0" id="cr-resources-table">
@@ -921,7 +975,7 @@ function crSortStudents(th, isNumeric) {
 <?php else: ?>
 
 <?php foreach ($bysection as $snum => $section): ?>
-          <tr class="cr-section-row">
+          <tr class="cr-section-row" data-sectionid="<?php echo $snum; ?>">
             <td colspan="<?php echo $rescols; ?>">
               <?php echo $OUTPUT->pix_icon('i/folder', '', 'core', ['class' => 'me-1']); ?>
               <?php echo $section['name']; ?>
@@ -948,7 +1002,9 @@ function crSortStudents(th, isNumeric) {
     $cmplpct     = ($hastracking && $totalstudents > 0) ? min(100, round(($cmplcount / $totalstudents) * 100)) : -1;
   ?>
           <tr class="cr-resource-row<?php echo !$cm->visible ? ' text-muted' : ''; ?>"
-              data-detail="<?php echo $detailid; ?>">
+              data-detail="<?php echo $detailid; ?>"
+              data-modname="<?php echo s($cm->modname); ?>"
+              data-section="<?php echo $snum; ?>">
 
             <!-- Nombre -->
             <td data-sort="<?php echo s(format_string($cm->name)); ?>">
