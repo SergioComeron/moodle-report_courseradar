@@ -13,21 +13,19 @@ $context = context_course::instance($courseid);
 require_login($course);
 require_capability('report/courseradar:view', $context);
 
-// ─── Procesado de fechas ─────────────────────────────────────────────────────
+// ─── Fechas ───────────────────────────────────────────────────────────────────
 $defaultfrom = $course->startdate ?: mktime(0, 0, 0, 1, 1, (int)date('Y'));
 if (!$defaultfrom) {
     $defaultfrom = mktime(0, 0, 0, 1, 1, (int)date('Y'));
 }
 $datefrom = $datefromstr ? strtotime($datefromstr) : $defaultfrom;
 $dateto   = $datetostr   ? strtotime($datetostr . ' 23:59:59') : time();
-
 if (!$datefrom || $datefrom < 0) {
     $datefrom = $defaultfrom;
 }
 if (!$dateto || $dateto < $datefrom) {
     $dateto = time();
 }
-
 $datefromformat = date('Y-m-d', $datefrom);
 $datetoformat   = date('Y-m-d', $dateto);
 $isfiltered     = ($datefromstr !== '' || $datetostr !== '');
@@ -39,26 +37,21 @@ $PAGE->set_title(get_string('pluginname', 'report_courseradar'));
 $PAGE->set_heading($course->fullname);
 
 // ─── Módulos del curso ───────────────────────────────────────────────────────
-$modinfo = get_fast_modinfo($course);
-$allcms  = $modinfo->get_cms();
-
+$modinfo  = get_fast_modinfo($course);
 $validcms = [];
-foreach ($allcms as $cm) {
+foreach ($modinfo->get_cms() as $cm) {
     if (!$cm->deletioninprogress) {
         $validcms[$cm->id] = $cm;
     }
 }
 $totalmodules = count($validcms);
 
-// ─── Usuarios matriculados: separar profesores de estudiantes ────────────────
+// ─── Usuarios: separar estudiantes de profesores ─────────────────────────────
 $allenrolled = get_enrolled_users(
-    $context,
-    '',
-    0,
+    $context, '', 0,
     'u.id, u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic, u.middlename, u.alternatename, u.picture, u.imagealt, u.email'
 );
-$canview    = get_enrolled_users($context, 'report/courseradar:view', 0, 'u.id');
-$canviewids = array_keys($canview);
+$canviewids = array_keys(get_enrolled_users($context, 'report/courseradar:view', 0, 'u.id'));
 
 $students = [];
 foreach ($allenrolled as $u) {
@@ -68,14 +61,16 @@ foreach ($allenrolled as $u) {
 }
 uasort($students, fn($a, $b) => strcmp($a->lastname . $a->firstname, $b->lastname . $b->firstname));
 $totalstudents = count($students);
+$studentids    = array_keys($students);
 
-// ─── Datos de log ────────────────────────────────────────────────────────────
-$logdata    = [];   // [cmid => {totalviews, uniqueusers, lastaccess}]
-$bycm       = [];   // [cmid][userid] => {views, lastaccess}
-$studentlog = [];   // [userid][cmid] => views
+// ─── Consultas de log ────────────────────────────────────────────────────────
+$logdata    = [];   // [cmid] => {totalviews, uniqueusers, lastaccess}
+$bycm       = [];   // [cmid][uid] => {views, lastaccess}
+$studentlog = [];   // [uid][cmid] => views
+$byday      = [];   // ['Y-m-d'] => count
+$heatmap    = array_fill(0, 7, array_fill(0, 6, 0)); // [dow 0=Sun][4h block 0-5]
 
 if ($totalstudents > 0 && $totalmodules > 0) {
-    $studentids = array_keys($students);
     [$insql, $inparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'st');
 
     $logparams = array_merge([
@@ -102,10 +97,8 @@ if ($totalstudents > 0 && $totalmodules > 0) {
     $logdata = $DB->get_records_sql($sql, $logparams);
 
     // Detalle por usuario y módulo
-    $sql2 = "SELECT contextinstanceid AS cmid,
-                    userid,
-                    COUNT(*)         AS views,
-                    MAX(timecreated) AS lastaccess
+    $sql2 = "SELECT contextinstanceid AS cmid, userid,
+                    COUNT(*) AS views, MAX(timecreated) AS lastaccess
                FROM {logstore_standard_log}
               WHERE courseid     = :courseid
                 AND action       = :action
@@ -116,10 +109,59 @@ if ($totalstudents > 0 && $totalmodules > 0) {
               GROUP BY contextinstanceid, userid";
     $rs = $DB->get_recordset_sql($sql2, $logparams);
     foreach ($rs as $row) {
-        $bycm[$row->cmid][$row->userid]         = $row;
-        $studentlog[$row->userid][$row->cmid]   = (int)$row->views;
+        $bycm[$row->cmid][$row->userid]       = $row;
+        $studentlog[$row->userid][$row->cmid] = (int)$row->views;
     }
     $rs->close();
+
+    // Timestamps para gráfico de actividad y heatmap
+    $sql3 = "SELECT timecreated
+               FROM {logstore_standard_log}
+              WHERE courseid     = :courseid
+                AND action       = :action
+                AND contextlevel = :contextlevel
+                AND timecreated >= :datefrom
+                AND timecreated <= :dateto
+                AND userid {$insql}";
+    $rs = $DB->get_recordset_sql($sql3, $logparams);
+    foreach ($rs as $row) {
+        $ts    = (int)$row->timecreated;
+        $day   = date('Y-m-d', $ts);
+        $dow   = (int)date('w', $ts);
+        $block = (int)floor((int)date('G', $ts) / 4);
+        $byday[$day]           = ($byday[$day] ?? 0) + 1;
+        $heatmap[$dow][$block]++;
+    }
+    $rs->close();
+    ksort($byday);
+}
+
+// ─── Datos de finalización ───────────────────────────────────────────────────
+$completionenabled = !empty($course->enablecompletion);
+$completions       = [];   // [cmid] => count of students who completed
+$completionbyuser  = [];   // [cmid][uid] => completionstate
+
+if ($completionenabled && $totalstudents > 0 && $totalmodules > 0) {
+    [$cminsql,  $cminp]  = $DB->get_in_or_equal(array_keys($validcms), SQL_PARAMS_NAMED, 'cm');
+    [$stcinsql, $stcinp] = $DB->get_in_or_equal($studentids,           SQL_PARAMS_NAMED, 'stc');
+    $rs = $DB->get_recordset_sql(
+        "SELECT coursemoduleid AS cmid, userid, completionstate
+           FROM {course_modules_completion}
+          WHERE coursemoduleid {$cminsql} AND userid {$stcinsql} AND completionstate > 0",
+        array_merge($cminp, $stcinp)
+    );
+    foreach ($rs as $row) {
+        $completions[$row->cmid]                   = ($completions[$row->cmid] ?? 0) + 1;
+        $completionbyuser[$row->cmid][$row->userid] = (int)$row->completionstate;
+    }
+    $rs->close();
+}
+
+$hasanycompletion = false;
+if ($completionenabled) {
+    foreach ($validcms as $cm) {
+        if ($cm->completion > 0) { $hasanycompletion = true; break; }
+    }
 }
 
 // ─── Estadísticas de resumen ─────────────────────────────────────────────────
@@ -132,17 +174,86 @@ foreach ($validcms as $cmid => $cm) {
     $v = isset($logdata[$cmid]) ? (int)$logdata[$cmid]->totalviews  : 0;
     $u = isset($logdata[$cmid]) ? (int)$logdata[$cmid]->uniqueusers : 0;
     $totalinteractions += $v;
-    if ($v > $maxviews) {
-        $maxviews = $v;
-        $maxname  = format_string($cm->name);
-    }
+    if ($v > $maxviews) { $maxviews = $v; $maxname = format_string($cm->name); }
     if ($totalstudents > 0) {
         $engagements[] = ($u / $totalstudents) * 100;
     }
 }
 $avgengagement = $engagements ? round(array_sum($engagements) / count($engagements)) : 0;
 
-// ─── Organizar por sección ───────────────────────────────────────────────────
+// ─── Alumnos en riesgo ───────────────────────────────────────────────────────
+$atrisk_none = [];
+$atrisk_low  = [];
+foreach ($students as $uid => $stu) {
+    $visited = isset($studentlog[$uid]) ? count($studentlog[$uid]) : 0;
+    if ($visited === 0) {
+        $atrisk_none[$uid] = $stu;
+    } else if ($totalmodules > 0 && ($visited / $totalmodules) < 0.30) {
+        $atrisk_low[$uid] = $stu;
+    }
+}
+$totalrisk = count($atrisk_none) + count($atrisk_low);
+
+// ─── Datos para gráfico de actividad ─────────────────────────────────────────
+$chartlabels  = [];
+$chartvalues  = [];
+$chartweekly  = false;
+
+if (!empty($byday)) {
+    $dayrange = ($dateto - $datefrom) / DAYSECS;
+    if ($dayrange > 90) {
+        $chartweekly = true;
+        $byweek = [];
+        foreach ($byday as $day => $cnt) {
+            $ts     = strtotime($day);
+            $isodow = (int)date('N', $ts); // 1=Mon...7=Sun
+            $monds  = $ts - ($isodow - 1) * 86400;
+            $wk     = date('Y-m-d', $monds);
+            $byweek[$wk] = ($byweek[$wk] ?? 0) + $cnt;
+        }
+        ksort($byweek);
+        foreach ($byweek as $wk => $cnt) {
+            $chartlabels[] = date('d M', strtotime($wk));
+            $chartvalues[] = $cnt;
+        }
+    } else {
+        for ($d = $datefrom; $d <= $dateto; $d += DAYSECS) {
+            $chartlabels[] = date('d M', $d);
+            $chartvalues[] = $byday[date('Y-m-d', $d)] ?? 0;
+        }
+    }
+}
+
+// ─── Objeto gráfico Moodle ───────────────────────────────────────────────────
+$chartobj = null;
+if (!empty($chartvalues)) {
+    $chartobj = new \core\chart_line();
+    $chartobj->set_smooth(true);
+    $cseries = new \core\chart_series(
+        get_string('totalinteractions', 'report_courseradar'),
+        $chartvalues
+    );
+    $chartobj->add_series($cseries);
+    $chartobj->set_labels($chartlabels);
+}
+
+// ─── Heatmap: máximo para normalización ──────────────────────────────────────
+$heatmax = 1;
+foreach ($heatmap as $drow) {
+    foreach ($drow as $val) {
+        if ($val > $heatmax) { $heatmax = $val; }
+    }
+}
+
+// ─── Nombres de días (localizados via calendario Moodle) ─────────────────────
+$daynames = [];
+for ($i = 0; $i < 7; $i++) {
+    $daynames[$i] = get_string('shortday' . ($i + 1), 'calendar');
+}
+$dayorder  = [1, 2, 3, 4, 5, 6, 0]; // Lun→Dom
+$timeslots = ['0–3h', '4–7h', '8–11h', '12–15h', '16–19h', '20–23h'];
+
+// ─── Organizar módulos por sección ───────────────────────────────────────────
 $bysection = [];
 foreach ($validcms as $cmid => $cm) {
     $snum = $cm->sectionnum;
@@ -157,10 +268,13 @@ foreach ($validcms as $cmid => $cm) {
 }
 ksort($bysection);
 
-// ─── Helper: color de barra según porcentaje ─────────────────────────────────
+// Número de columnas de la tabla de recursos (varía con finalización)
+$rescols = $hasanycompletion ? 8 : 7;
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
 function cr_barclass(int $pct): string {
-    if ($pct >= 70) return 'bg-success';
-    if ($pct >= 30) return 'bg-warning';
+    if ($pct >= 70) { return 'bg-success'; }
+    if ($pct >= 30) { return 'bg-warning'; }
     return 'bg-danger';
 }
 
@@ -168,30 +282,47 @@ function cr_barclass(int $pct): string {
 echo $OUTPUT->header();
 ?>
 <style>
-/* ── Course Radar styles ──────────────────────────────────────── */
-.cr-card           { border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); transition: transform .15s; }
-.cr-card:hover     { transform: translateY(-3px); }
-.cr-stat           { font-size: 2.2rem; font-weight: 700; line-height: 1.1; }
-.cr-stat-label     { font-size: .85rem; color: #6c757d; margin-top: .25rem; }
-.cr-maxname        { font-size: 1rem; font-weight: 600; word-break: break-word; }
-.progress          { height: 22px; border-radius: 6px; }
-.progress-bar      { font-size: .8rem; font-weight: 600; }
-.cr-section-row    { background: #f0f2f5 !important; }
-.cr-section-row td { font-weight: 600; font-size: .9rem; padding: .5rem .75rem !important; }
-.cr-detail-row td  { padding: 0 !important; border-top: 0 !important; }
-.cr-detail-inner   { background: #f8f9fa; border-top: 2px solid #dee2e6; }
-.btn.cr-btn-active { background-color: #0d6efd; color: #fff; }
-.cr-badge-mod      { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; }
-.cr-seen-list      { max-height: 260px; overflow-y: auto; }
-.cr-student-badge  { font-size: .75rem; cursor: default; }
+/* ── Course Radar ──────────────────────────────────────────────────────────── */
+.cr-card              { border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); transition: transform .15s; }
+.cr-card:hover        { transform: translateY(-3px); }
+.cr-stat              { font-size: 2.2rem; font-weight: 700; line-height: 1.1; }
+.cr-stat-label        { font-size: .85rem; color: #6c757d; margin-top: .25rem; }
+.cr-maxname           { font-size: 1rem; font-weight: 600; word-break: break-word; }
+.progress             { height: 22px; border-radius: 6px; }
+.progress-bar         { font-size: .8rem; font-weight: 600; }
+/* Secciones y filas */
+.cr-section-row       { background: #f0f2f5 !important; }
+.cr-section-row td    { font-weight: 600; font-size: .9rem; padding: .5rem .75rem !important; }
+.cr-detail-row td     { padding: 0 !important; border-top: 0 !important; }
+.cr-detail-inner      { background: #f8f9fa; border-top: 2px solid #dee2e6; }
+.cr-seen-list         { max-height: 260px; overflow-y: auto; }
 tr.cr-resource-row:hover { background: #f0f7ff; }
 tr.cr-student-row:hover  { background: #f0f7ff; }
-.cr-zero           { color: #adb5bd; }
+.btn.cr-btn-active    { background-color: #0d6efd; color: #fff; }
+.cr-badge-mod         { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; }
+.cr-student-badge     { font-size: .75rem; cursor: default; }
+.cr-zero              { color: #adb5bd; }
+/* Alumnos en riesgo */
+.cr-risk-card         { border-left: 4px solid #dc3545 !important; }
+.cr-risk-names        { max-height: 180px; overflow-y: auto; columns: 2; column-gap: 1rem; }
+.cr-risk-names a      { display: block; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Heatmap */
+.cr-heatmap           { border-collapse: separate; border-spacing: 3px; font-size: .78rem; width: 100%; }
+.cr-heatmap th        { font-weight: 600; padding: 3px 6px; text-align: center; white-space: nowrap; }
+.cr-heatmap td        { border-radius: 4px; padding: 5px 4px; text-align: center; min-width: 36px; cursor: default; }
+/* Ordenación */
+.cr-th-sort           { cursor: pointer; user-select: none; white-space: nowrap; }
+.cr-th-sort:hover     { background: rgba(255,255,255,.12) !important; }
+.cr-th-sort::after    { content: ' ⇅'; opacity: .35; font-size: .75em; }
+.cr-th-asc::after     { content: ' ▲'; opacity: 1; }
+.cr-th-desc::after    { content: ' ▼'; opacity: 1; }
+#cr-sort-notice       { display: none; }
 </style>
 <script>
+/* ── Toggle fila de detalle ────────────────────────────────────────────────── */
 function crToggle(btn, rowId) {
     var row = document.getElementById(rowId);
-    if (!row) return;
+    if (!row) { return; }
     if (row.style.display === 'table-row') {
         row.style.display = 'none';
         btn.classList.remove('cr-btn-active');
@@ -200,362 +331,625 @@ function crToggle(btn, rowId) {
         btn.classList.add('cr-btn-active');
     }
 }
+
+/* ── Ordenar tabla de recursos ─────────────────────────────────────────────── */
+function crSortResources(th, isNumeric) {
+    var table = document.getElementById('cr-resources-table');
+    var tbody = table.querySelector('tbody');
+    var colIndex = Array.from(th.parentNode.children).indexOf(th);
+    var asc = th.dataset.sortDir !== 'asc';
+
+    th.parentNode.querySelectorAll('th').forEach(function(h) {
+        h.dataset.sortDir = '';
+        h.classList.remove('cr-th-asc', 'cr-th-desc');
+    });
+    th.dataset.sortDir = asc ? 'asc' : 'desc';
+    th.classList.add(asc ? 'cr-th-asc' : 'cr-th-desc');
+
+    var rows = Array.from(tbody.querySelectorAll('tr.cr-resource-row'));
+    rows.sort(function(a, b) {
+        var tdA = a.querySelectorAll('td')[colIndex];
+        var tdB = b.querySelectorAll('td')[colIndex];
+        var vA  = tdA ? (tdA.dataset.sort !== undefined ? tdA.dataset.sort : tdA.textContent.trim()) : '';
+        var vB  = tdB ? (tdB.dataset.sort !== undefined ? tdB.dataset.sort : tdB.textContent.trim()) : '';
+        var cmp = isNumeric ? (parseFloat(vA) || 0) - (parseFloat(vB) || 0) : vA.localeCompare(vB);
+        return asc ? cmp : -cmp;
+    });
+
+    tbody.querySelectorAll('.cr-section-row').forEach(function(r) { r.style.display = 'none'; });
+    document.getElementById('cr-sort-notice').style.display = 'block';
+
+    rows.forEach(function(row) {
+        tbody.appendChild(row);
+        var dr = document.getElementById(row.dataset.detail);
+        if (dr) { tbody.appendChild(dr); }
+    });
+}
+
+function crResetSort() { location.reload(); }
+
+/* ── Ordenar tabla de estudiantes ──────────────────────────────────────────── */
+function crSortStudents(th, isNumeric) {
+    var table = document.getElementById('cr-students-table');
+    var tbody = table.querySelector('tbody');
+    var colIndex = Array.from(th.parentNode.children).indexOf(th);
+    var asc = th.dataset.sortDir !== 'asc';
+
+    th.parentNode.querySelectorAll('th').forEach(function(h) {
+        h.dataset.sortDir = '';
+        h.classList.remove('cr-th-asc', 'cr-th-desc');
+    });
+    th.dataset.sortDir = asc ? 'asc' : 'desc';
+    th.classList.add(asc ? 'cr-th-asc' : 'cr-th-desc');
+
+    var rows = Array.from(tbody.querySelectorAll('tr.cr-student-row'));
+    rows.sort(function(a, b) {
+        var tdA = a.querySelectorAll('td')[colIndex];
+        var tdB = b.querySelectorAll('td')[colIndex];
+        var vA  = tdA ? (tdA.dataset.sort !== undefined ? tdA.dataset.sort : tdA.textContent.trim()) : '';
+        var vB  = tdB ? (tdB.dataset.sort !== undefined ? tdB.dataset.sort : tdB.textContent.trim()) : '';
+        var cmp = isNumeric ? (parseFloat(vA) || 0) - (parseFloat(vB) || 0) : vA.localeCompare(vB);
+        return asc ? cmp : -cmp;
+    });
+
+    rows.forEach(function(row) {
+        tbody.appendChild(row);
+        var dr = document.getElementById(row.dataset.detail);
+        if (dr) { tbody.appendChild(dr); }
+    });
+}
 </script>
 
 <div class="container-fluid px-0">
 
-  <!-- ── Cabecera ──────────────────────────────────────────────── -->
-  <div class="d-flex align-items-start mb-3 gap-3">
-    <div>
-      <h2 class="mb-0 fw-bold">
-        <?php echo $OUTPUT->pix_icon('i/report', '', 'core', ['class' => 'me-1']); ?>
-        <?php echo get_string('pluginname', 'report_courseradar'); ?>
-      </h2>
-      <p class="text-muted mb-0 small"><?php echo get_string('plugindesc', 'report_courseradar'); ?></p>
+<!-- ── Cabecera ──────────────────────────────────────────────────────────── -->
+<div class="d-flex align-items-start mb-3">
+  <div>
+    <h2 class="mb-0 fw-bold">
+      <?php echo $OUTPUT->pix_icon('i/report', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('pluginname', 'report_courseradar'); ?>
+    </h2>
+    <p class="text-muted mb-0 small"><?php echo get_string('plugindesc', 'report_courseradar'); ?></p>
+  </div>
+</div>
+
+<!-- ── Filtro de fechas ──────────────────────────────────────────────────── -->
+<div class="card cr-card mb-4">
+  <div class="card-body py-3">
+    <form method="get" action="" class="row g-2 align-items-end">
+      <input type="hidden" name="id" value="<?php echo $courseid; ?>">
+      <div class="col-sm-4 col-md-3">
+        <label for="cr_datefrom" class="form-label mb-1 small fw-semibold">
+          <?php echo get_string('datefrom', 'report_courseradar'); ?>
+        </label>
+        <input type="date" class="form-control form-control-sm" id="cr_datefrom"
+               name="datefrom" value="<?php echo s($datefromformat); ?>">
+      </div>
+      <div class="col-sm-4 col-md-3">
+        <label for="cr_dateto" class="form-label mb-1 small fw-semibold">
+          <?php echo get_string('dateto', 'report_courseradar'); ?>
+        </label>
+        <input type="date" class="form-control form-control-sm" id="cr_dateto"
+               name="dateto" value="<?php echo s($datetoformat); ?>">
+      </div>
+      <div class="col-sm-4 col-md-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100">
+          <?php echo get_string('applyfilter', 'report_courseradar'); ?>
+        </button>
+      </div>
+      <?php if ($isfiltered): ?>
+      <div class="col-sm-4 col-md-2">
+        <a href="<?php echo (new moodle_url('/report/courseradar/index.php', ['id' => $courseid]))->out(false); ?>"
+           class="btn btn-outline-secondary btn-sm w-100">
+          <?php echo get_string('resetfilter', 'report_courseradar'); ?>
+        </a>
+      </div>
+      <?php endif; ?>
+    </form>
+  </div>
+</div>
+
+<!-- ── Tarjetas de resumen ───────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card cr-card h-100 border-0 border-start border-primary border-4">
+      <div class="card-body">
+        <div class="cr-stat text-primary"><?php echo $totalmodules; ?></div>
+        <div class="cr-stat-label"><?php echo get_string('totalresources', 'report_courseradar'); ?></div>
+      </div>
     </div>
   </div>
-
-  <!-- ── Filtro de fechas ──────────────────────────────────────── -->
-  <div class="card cr-card mb-4">
-    <div class="card-body py-3">
-      <form method="get" action="" class="row g-2 align-items-end">
-        <input type="hidden" name="id" value="<?php echo $courseid; ?>">
-        <div class="col-sm-4 col-md-3">
-          <label for="cr_datefrom" class="form-label mb-1 small fw-semibold">
-            <?php echo get_string('datefrom', 'report_courseradar'); ?>
-          </label>
-          <input type="date" class="form-control form-control-sm" id="cr_datefrom"
-                 name="datefrom" value="<?php echo s($datefromformat); ?>">
-        </div>
-        <div class="col-sm-4 col-md-3">
-          <label for="cr_dateto" class="form-label mb-1 small fw-semibold">
-            <?php echo get_string('dateto', 'report_courseradar'); ?>
-          </label>
-          <input type="date" class="form-control form-control-sm" id="cr_dateto"
-                 name="dateto" value="<?php echo s($datetoformat); ?>">
-        </div>
-        <div class="col-sm-4 col-md-2">
-          <button type="submit" class="btn btn-primary btn-sm w-100">
-            <?php echo get_string('applyfilter', 'report_courseradar'); ?>
-          </button>
-        </div>
-        <?php if ($isfiltered): ?>
-        <div class="col-sm-4 col-md-2">
-          <a href="<?php echo (new moodle_url('/report/courseradar/index.php', ['id' => $courseid]))->out(false); ?>"
-             class="btn btn-outline-secondary btn-sm w-100">
-            <?php echo get_string('resetfilter', 'report_courseradar'); ?>
-          </a>
+  <div class="col-6 col-lg-3">
+    <div class="card cr-card h-100 border-0 border-start border-success border-4">
+      <div class="card-body">
+        <div class="cr-stat text-success"><?php echo number_format($totalinteractions); ?></div>
+        <div class="cr-stat-label"><?php echo get_string('totalinteractions', 'report_courseradar'); ?></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card cr-card h-100 border-0 border-start border-info border-4">
+      <div class="card-body">
+        <div class="cr-stat text-info"><?php echo $avgengagement; ?>%</div>
+        <div class="cr-stat-label"><?php echo get_string('avgengagement', 'report_courseradar'); ?></div>
+        <?php if ($totalstudents > 0): ?>
+        <div class="progress mt-2" style="height:6px;">
+          <div class="progress-bar bg-info" style="width:<?php echo $avgengagement; ?>%"></div>
         </div>
         <?php endif; ?>
-      </form>
+      </div>
     </div>
   </div>
-
-  <!-- ── Tarjetas de resumen ───────────────────────────────────── -->
-  <div class="row g-3 mb-4">
-
-    <div class="col-6 col-lg-3">
-      <div class="card cr-card h-100 border-0 border-start border-primary border-4">
-        <div class="card-body">
-          <div class="cr-stat text-primary"><?php echo $totalmodules; ?></div>
-          <div class="cr-stat-label"><?php echo get_string('totalresources', 'report_courseradar'); ?></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-6 col-lg-3">
-      <div class="card cr-card h-100 border-0 border-start border-success border-4">
-        <div class="card-body">
-          <div class="cr-stat text-success"><?php echo number_format($totalinteractions); ?></div>
-          <div class="cr-stat-label"><?php echo get_string('totalinteractions', 'report_courseradar'); ?></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-6 col-lg-3">
-      <div class="card cr-card h-100 border-0 border-start border-info border-4">
-        <div class="card-body">
-          <div class="cr-stat text-info"><?php echo $avgengagement; ?>%</div>
-          <div class="cr-stat-label"><?php echo get_string('avgengagement', 'report_courseradar'); ?></div>
-          <?php if ($totalstudents > 0): ?>
-          <div class="progress mt-2" style="height:6px;">
-            <div class="progress-bar bg-info" style="width:<?php echo $avgengagement; ?>%"></div>
-          </div>
+  <div class="col-6 col-lg-3">
+    <div class="card cr-card h-100 border-0 border-start border-warning border-4">
+      <div class="card-body">
+        <div class="cr-maxname text-warning"><?php echo $maxname; ?></div>
+        <div class="cr-stat-label">
+          <?php echo get_string('mostviewed', 'report_courseradar'); ?>
+          <?php if ($maxviews > 0): ?>
+            <span class="badge bg-warning text-dark ms-1"><?php echo $maxviews; ?></span>
           <?php endif; ?>
         </div>
       </div>
     </div>
+  </div>
+</div>
 
-    <div class="col-6 col-lg-3">
-      <div class="card cr-card h-100 border-0 border-start border-warning border-4">
-        <div class="card-body">
-          <div class="cr-maxname text-warning"><?php echo $maxname; ?></div>
-          <div class="cr-stat-label">
-            <?php echo get_string('mostviewed', 'report_courseradar'); ?>
-            <?php if ($maxviews > 0): ?>
-              <span class="badge bg-warning text-dark ms-1"><?php echo $maxviews; ?></span>
-            <?php endif; ?>
-          </div>
+<!-- ── Panel de alumnos en riesgo ───────────────────────────────────────── -->
+<?php if ($totalstudents > 0 && $totalrisk > 0): ?>
+<div class="card cr-card cr-risk-card mb-4">
+  <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+    <h5 class="mb-0 fw-bold text-danger">
+      <?php echo $OUTPUT->pix_icon('i/warning', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('atrisk', 'report_courseradar'); ?>
+      <span class="badge bg-danger ms-2"><?php echo $totalrisk; ?></span>
+    </h5>
+    <small class="text-muted"><?php echo get_string('atrisk_info', 'report_courseradar'); ?></small>
+  </div>
+  <div class="card-body">
+    <div class="row g-4">
+
+      <?php if (!empty($atrisk_none)): ?>
+      <div class="col-md-6">
+        <h6 class="fw-bold text-danger mb-2">
+          <?php echo $OUTPUT->pix_icon('i/invalid', '', 'core', ['class' => 'me-1']); ?>
+          <?php echo get_string('atrisk_noactivity', 'report_courseradar'); ?>
+          <span class="badge bg-danger ms-1"><?php echo count($atrisk_none); ?></span>
+        </h6>
+        <div class="cr-risk-names">
+          <?php foreach ($atrisk_none as $uid => $stu): ?>
+          <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>">
+            <?php echo fullname($stu); ?>
+          </a>
+          <?php endforeach; ?>
         </div>
       </div>
-    </div>
+      <?php endif; ?>
 
+      <?php if (!empty($atrisk_low)): ?>
+      <div class="col-md-6">
+        <h6 class="fw-bold text-warning mb-2">
+          <?php echo $OUTPUT->pix_icon('i/warning', '', 'core', ['class' => 'me-1']); ?>
+          <?php echo get_string('atrisk_lowactivity', 'report_courseradar'); ?>
+          <span class="badge bg-warning text-dark ms-1"><?php echo count($atrisk_low); ?></span>
+        </h6>
+        <div class="cr-risk-names">
+          <?php foreach ($atrisk_low as $uid => $stu): ?>
+          <?php
+            $lv  = count($studentlog[$uid] ?? []);
+            $lpct = $totalmodules > 0 ? round(($lv / $totalmodules) * 100) : 0;
+          ?>
+          <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>">
+            <?php echo fullname($stu); ?>
+            <span class="badge bg-warning text-dark"><?php echo $lpct; ?>%</span>
+          </a>
+          <?php endforeach; ?>
+        </div>
+      </div>
+      <?php endif; ?>
+
+    </div>
   </div>
+</div>
+<?php endif; ?>
 
-  <!-- ── Tabla de recursos por sección ─────────────────────────── -->
-  <div class="card cr-card mb-4">
-    <div class="card-header bg-white border-bottom py-3">
-      <h5 class="mb-0 fw-bold">
-        <?php echo $OUTPUT->pix_icon('i/course', '', 'core', ['class' => 'me-1']); ?>
-        <?php echo get_string('resourceactivity', 'report_courseradar'); ?>
-        <span class="badge bg-secondary ms-2"><?php echo $totalmodules; ?></span>
-      </h5>
+<!-- ── Gráfico de actividad + Heatmap ───────────────────────────────────── -->
+<?php if (!empty($chartvalues) || array_sum(array_map('array_sum', $heatmap)) > 0): ?>
+<div class="row g-3 mb-4">
+
+  <!-- Gráfico temporal -->
+  <?php if (!empty($chartvalues)): ?>
+  <div class="col-xl-7">
+    <div class="card cr-card h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <h5 class="mb-0 fw-bold">
+          <?php echo get_string('activityovertime', 'report_courseradar'); ?>
+          <?php if ($chartweekly): ?>
+            <small class="text-muted fw-normal ms-2 small">
+              <?php echo get_string('weeklyaggregated', 'report_courseradar'); ?>
+            </small>
+          <?php endif; ?>
+        </h5>
+      </div>
+      <div class="card-body">
+        <?php echo $OUTPUT->render($chartobj); ?>
+      </div>
     </div>
-    <div class="card-body p-0">
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-dark">
+  </div>
+  <?php endif; ?>
+
+  <!-- Heatmap -->
+  <div class="col-xl-<?php echo !empty($chartvalues) ? '5' : '12'; ?>">
+    <div class="card cr-card h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <h5 class="mb-0 fw-bold">
+          <?php echo get_string('activitypattern', 'report_courseradar'); ?>
+        </h5>
+      </div>
+      <div class="card-body p-3 overflow-auto">
+        <table class="cr-heatmap">
+          <thead>
             <tr>
-              <th><?php echo get_string('resource', 'report_courseradar'); ?></th>
-              <th><?php echo get_string('type', 'report_courseradar'); ?></th>
-              <th class="text-center"><?php echo get_string('totalviews', 'report_courseradar'); ?></th>
-              <th class="text-center"><?php echo get_string('uniquestudents', 'report_courseradar'); ?></th>
-              <th style="min-width:180px"><?php echo get_string('coverage', 'report_courseradar'); ?></th>
-              <th><?php echo get_string('lastaccess', 'report_courseradar'); ?></th>
-              <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
+              <th></th>
+              <?php foreach ($timeslots as $slot): ?>
+              <th><?php echo $slot; ?></th>
+              <?php endforeach; ?>
             </tr>
           </thead>
           <tbody>
+            <?php foreach ($dayorder as $dow): ?>
+            <tr>
+              <th class="text-end pe-2"><?php echo $daynames[$dow]; ?></th>
+              <?php for ($b = 0; $b < 6; $b++): ?>
+              <?php
+                $val      = $heatmap[$dow][$b];
+                $intensity = round($val / $heatmax, 2);
+                $bg = $val > 0
+                    ? 'background:rgba(13,110,253,' . $intensity . ');'
+                    : 'background:#f0f2f5;';
+                $color = $intensity > 0.5 ? 'color:#fff;' : '';
+              ?>
+              <td style="<?php echo $bg . $color; ?>"
+                  title="<?php echo $daynames[$dow] . ' ' . $timeslots[$b] . ': ' . $val; ?>">
+                <?php echo $val > 0 ? $val : ''; ?>
+              </td>
+              <?php endfor; ?>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+<?php endif; ?>
+
+<!-- ── Tabla de recursos por sección ─────────────────────────────────────── -->
+<div class="card cr-card mb-4">
+  <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+    <h5 class="mb-0 fw-bold">
+      <?php echo $OUTPUT->pix_icon('i/course', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('resourceactivity', 'report_courseradar'); ?>
+      <span class="badge bg-secondary ms-2"><?php echo $totalmodules; ?></span>
+    </h5>
+    <span id="cr-sort-notice" class="text-muted small">
+      <a href="javascript:crResetSort()" class="btn btn-sm btn-outline-secondary">
+        <?php echo get_string('resetsort', 'report_courseradar'); ?>
+      </a>
+    </span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" id="cr-resources-table">
+        <thead class="table-dark">
+          <tr>
+            <th class="cr-th-sort" onclick="crSortResources(this,false)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('resource', 'report_courseradar'); ?>
+            </th>
+            <th class="cr-th-sort" onclick="crSortResources(this,false)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('type', 'report_courseradar'); ?>
+            </th>
+            <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('totalviews', 'report_courseradar'); ?>
+            </th>
+            <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('uniquestudents', 'report_courseradar'); ?>
+            </th>
+            <th class="cr-th-sort" style="min-width:160px" onclick="crSortResources(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('coverage', 'report_courseradar'); ?>
+            </th>
+            <?php if ($hasanycompletion): ?>
+            <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('completion', 'report_courseradar'); ?>
+            </th>
+            <?php endif; ?>
+            <th class="cr-th-sort" onclick="crSortResources(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('lastaccess', 'report_courseradar'); ?>
+            </th>
+            <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
+          </tr>
+        </thead>
+        <tbody>
 
 <?php if (empty($validcms)): ?>
-            <tr>
-              <td colspan="7" class="text-center text-muted py-5">
-                <?php echo get_string('nointeractions', 'report_courseradar'); ?>
-              </td>
-            </tr>
+          <tr>
+            <td colspan="<?php echo $rescols; ?>" class="text-center text-muted py-5">
+              <?php echo get_string('nointeractions', 'report_courseradar'); ?>
+            </td>
+          </tr>
 <?php else: ?>
 
 <?php foreach ($bysection as $snum => $section): ?>
-            <!-- Sección -->
-            <tr class="cr-section-row">
-              <td colspan="7">
-                <?php echo $OUTPUT->pix_icon('i/folder', '', 'core', ['class' => 'me-1 text-secondary']); ?>
-                <?php echo $section['name']; ?>
-              </td>
-            </tr>
+          <tr class="cr-section-row">
+            <td colspan="<?php echo $rescols; ?>">
+              <?php echo $OUTPUT->pix_icon('i/folder', '', 'core', ['class' => 'me-1']); ?>
+              <?php echo $section['name']; ?>
+            </td>
+          </tr>
 
   <?php foreach ($section['cms'] as $cm): ?>
   <?php
-    $cmid    = $cm->id;
-    $views   = isset($logdata[$cmid]) ? (int)$logdata[$cmid]->totalviews  : 0;
-    $unique  = isset($logdata[$cmid]) ? (int)$logdata[$cmid]->uniqueusers : 0;
-    $last    = isset($logdata[$cmid])
-               ? userdate($logdata[$cmid]->lastaccess, get_string('strftimedate', 'langconfig'))
-               : '—';
-    $pct     = ($totalstudents > 0) ? min(100, round(($unique / $totalstudents) * 100)) : 0;
-    $notseen = max(0, $totalstudents - $unique);
-    $barclass  = cr_barclass($pct);
-    $iconurl   = $cm->get_icon_url()->out(false);
-    $cmurl     = $cm->url;
-    $detailid  = 'crdetail_' . $cmid;
+    $cmid     = $cm->id;
+    $views    = isset($logdata[$cmid]) ? (int)$logdata[$cmid]->totalviews  : 0;
+    $unique   = isset($logdata[$cmid]) ? (int)$logdata[$cmid]->uniqueusers : 0;
+    $lastts   = isset($logdata[$cmid]) ? (int)$logdata[$cmid]->lastaccess  : 0;
+    $last     = $lastts ? userdate($lastts, get_string('strftimedate', 'langconfig')) : '—';
+    $pct      = ($totalstudents > 0) ? min(100, round(($unique / $totalstudents) * 100)) : 0;
+    $notseen  = max(0, $totalstudents - $unique);
+    $barclass = cr_barclass($pct);
+    $iconurl  = $cm->get_icon_url()->out(false);
+    $cmurl    = $cm->url;
+    $detailid = 'crdetail_' . $cmid;
+
+    // Finalización
+    $hastracking = $hasanycompletion && ($cm->completion > 0);
+    $cmplcount   = $hastracking ? (int)($completions[$cmid] ?? 0) : 0;
+    $cmplpct     = ($hastracking && $totalstudents > 0) ? min(100, round(($cmplcount / $totalstudents) * 100)) : -1;
   ?>
-            <tr class="cr-resource-row <?php echo (!$cm->visible ? 'text-muted' : ''); ?>">
-              <!-- Nombre -->
-              <td>
-                <img src="<?php echo $iconurl; ?>" alt="" style="width:20px;height:20px;" class="me-1 flex-shrink-0">
-                <?php if ($cmurl): ?>
-                  <a href="<?php echo $cmurl->out(false); ?>" target="_blank"
-                     class="<?php echo (!$cm->visible ? 'text-muted text-decoration-line-through' : ''); ?>">
-                    <?php echo format_string($cm->name); ?>
-                  </a>
-                <?php else: ?>
-                  <span class="<?php echo (!$cm->visible ? 'text-muted text-decoration-line-through' : ''); ?>">
-                    <?php echo format_string($cm->name); ?>
-                  </span>
-                <?php endif; ?>
-                <?php if (!$cm->visible): ?>
-                  <span class="badge bg-secondary ms-1 cr-badge-mod">
-                    <?php echo get_string('hidden', 'report_courseradar'); ?>
-                  </span>
-                <?php endif; ?>
-              </td>
+          <tr class="cr-resource-row<?php echo !$cm->visible ? ' text-muted' : ''; ?>"
+              data-detail="<?php echo $detailid; ?>">
 
-              <!-- Tipo -->
-              <td>
-                <span class="badge bg-light text-dark border cr-badge-mod">
-                  <?php echo $cm->modname; ?>
+            <!-- Nombre -->
+            <td data-sort="<?php echo s(format_string($cm->name)); ?>">
+              <img src="<?php echo $iconurl; ?>" alt="" style="width:20px;height:20px;" class="me-1">
+              <?php if ($cmurl): ?>
+                <a href="<?php echo $cmurl->out(false); ?>" target="_blank"
+                   class="<?php echo !$cm->visible ? 'text-muted text-decoration-line-through' : ''; ?>">
+                  <?php echo format_string($cm->name); ?>
+                </a>
+              <?php else: ?>
+                <span class="<?php echo !$cm->visible ? 'text-muted text-decoration-line-through' : ''; ?>">
+                  <?php echo format_string($cm->name); ?>
                 </span>
-              </td>
-
-              <!-- Vistas totales -->
-              <td class="text-center fw-bold <?php echo ($views === 0 ? 'cr-zero' : ''); ?>">
-                <?php echo $views; ?>
-              </td>
-
-              <!-- Estudiantes únicos -->
-              <td class="text-center">
-                <span class="fw-semibold <?php echo ($unique === $totalstudents && $totalstudents > 0 ? 'text-success' : ''); ?>">
-                  <?php echo $unique; ?>/<?php echo $totalstudents; ?>
+              <?php endif; ?>
+              <?php if (!$cm->visible): ?>
+                <span class="badge bg-secondary ms-1 cr-badge-mod">
+                  <?php echo get_string('hidden', 'report_courseradar'); ?>
                 </span>
-                <?php if ($notseen > 0): ?>
-                <br><small class="text-danger"><?php echo $notseen; ?> <?php echo get_string('notviewed', 'report_courseradar'); ?></small>
-                <?php endif; ?>
-              </td>
+              <?php endif; ?>
+            </td>
 
-              <!-- Cobertura -->
-              <td>
-                <div class="progress" title="<?php echo $pct; ?>%">
-                  <div class="progress-bar <?php echo $barclass; ?>"
-                       role="progressbar"
-                       style="width:<?php echo $pct; ?>%"
-                       aria-valuenow="<?php echo $pct; ?>"
-                       aria-valuemin="0"
-                       aria-valuemax="100">
-                    <?php if ($pct >= 15): echo $pct . '%'; endif; ?>
-                  </div>
+            <!-- Tipo -->
+            <td data-sort="<?php echo s($cm->modname); ?>">
+              <span class="badge bg-light text-dark border cr-badge-mod"><?php echo $cm->modname; ?></span>
+            </td>
+
+            <!-- Vistas totales -->
+            <td class="text-center fw-bold <?php echo $views === 0 ? 'cr-zero' : ''; ?>"
+                data-sort="<?php echo $views; ?>">
+              <?php echo $views; ?>
+            </td>
+
+            <!-- Estudiantes únicos -->
+            <td class="text-center" data-sort="<?php echo $unique; ?>">
+              <span class="fw-semibold <?php echo ($unique === $totalstudents && $totalstudents > 0) ? 'text-success' : ''; ?>">
+                <?php echo $unique; ?>/<?php echo $totalstudents; ?>
+              </span>
+              <?php if ($notseen > 0): ?>
+              <br><small class="text-danger"><?php echo $notseen; ?> <?php echo get_string('notviewed', 'report_courseradar'); ?></small>
+              <?php endif; ?>
+            </td>
+
+            <!-- Cobertura -->
+            <td data-sort="<?php echo $pct; ?>">
+              <div class="progress" title="<?php echo $pct; ?>%">
+                <div class="progress-bar <?php echo $barclass; ?>"
+                     role="progressbar" style="width:<?php echo $pct; ?>%"
+                     aria-valuenow="<?php echo $pct; ?>" aria-valuemin="0" aria-valuemax="100">
+                  <?php if ($pct >= 15): echo $pct . '%'; endif; ?>
                 </div>
-                <?php if ($pct < 15): ?>
-                  <small class="text-muted"><?php echo $pct; ?>%</small>
-                <?php endif; ?>
-              </td>
+              </div>
+              <?php if ($pct < 15): ?><small class="text-muted"><?php echo $pct; ?>%</small><?php endif; ?>
+            </td>
 
-              <!-- Último acceso -->
-              <td><small class="text-muted"><?php echo $last; ?></small></td>
+            <!-- Finalización (solo si el curso la tiene habilitada) -->
+            <?php if ($hasanycompletion): ?>
+            <td class="text-center" data-sort="<?php echo $cmplpct >= 0 ? $cmplpct : -1; ?>">
+              <?php if (!$hastracking): ?>
+                <small class="text-muted">—</small>
+              <?php else: ?>
+                <span class="fw-semibold <?php echo $cmplcount === $totalstudents ? 'text-success' : ''; ?>">
+                  <?php echo $cmplcount; ?>/<?php echo $totalstudents; ?>
+                </span>
+                <br>
+                <div class="progress mt-1" style="height:8px;" title="<?php echo $cmplpct; ?>%">
+                  <div class="progress-bar <?php echo cr_barclass($cmplpct); ?>"
+                       style="width:<?php echo $cmplpct; ?>%"></div>
+                </div>
+              <?php endif; ?>
+            </td>
+            <?php endif; ?>
 
-              <!-- Botón detalle -->
-              <td class="text-center">
-                <button class="btn btn-sm btn-outline-primary"
-                        type="button"
-                        onclick="crToggle(this, '<?php echo $detailid; ?>')"
-                        title="<?php echo get_string('details', 'report_courseradar'); ?>">
-                  <?php echo $OUTPUT->pix_icon('i/group', '', 'core'); ?>
-                </button>
-              </td>
-            </tr>
+            <!-- Último acceso -->
+            <td data-sort="<?php echo $lastts; ?>">
+              <small class="text-muted"><?php echo $last; ?></small>
+            </td>
 
-            <!-- Fila de detalle -->
-            <tr id="<?php echo $detailid; ?>" class="cr-detail-row" style="display:none;">
-              <td colspan="7">
-                <div class="cr-detail-inner p-3">
-                    <div class="row g-3">
+            <!-- Botón detalle -->
+            <td class="text-center">
+              <button class="btn btn-sm btn-outline-primary"
+                      type="button"
+                      onclick="crToggle(this,'<?php echo $detailid; ?>')"
+                      title="<?php echo get_string('details', 'report_courseradar'); ?>">
+                <?php echo $OUTPUT->pix_icon('i/group', '', 'core'); ?>
+              </button>
+            </td>
+          </tr>
 
-                      <!-- Quién sí ha visto -->
-                      <div class="col-md-6">
-                        <h6 class="text-success fw-bold mb-2">
-                          <?php echo $OUTPUT->pix_icon('i/valid', '', 'core', ['class' => 'me-1']); ?>
-                          <?php echo get_string('haveviewed', 'report_courseradar'); ?>
-                          <span class="badge bg-success ms-1"><?php echo $unique; ?></span>
-                        </h6>
-                        <?php if ($unique > 0): ?>
-                        <div class="cr-seen-list">
-                          <ul class="list-unstyled mb-0">
-                          <?php foreach ($students as $uid => $stu): ?>
-                            <?php if (isset($bycm[$cmid][$uid])): ?>
-                            <?php $urow = $bycm[$cmid][$uid]; ?>
-                            <li class="d-flex align-items-center py-1 border-bottom border-light gap-2">
-                              <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>"
-                                 class="flex-grow-1 text-truncate">
-                                <?php echo fullname($stu); ?>
-                              </a>
-                              <span class="badge bg-primary cr-student-badge" title="<?php echo get_string('totalviews', 'report_courseradar'); ?>">
-                                <?php echo $urow->views; ?> <?php echo get_string('times', 'report_courseradar'); ?>
-                              </span>
-                              <small class="text-muted text-nowrap">
-                                <?php echo userdate($urow->lastaccess, get_string('strftimedatetimeshort', 'langconfig')); ?>
-                              </small>
-                            </li>
-                            <?php endif; ?>
-                          <?php endforeach; ?>
-                          </ul>
-                        </div>
-                        <?php else: ?>
-                        <p class="text-muted small mb-0"><?php echo get_string('noviewsyet', 'report_courseradar'); ?></p>
+          <!-- Fila de detalle -->
+          <tr id="<?php echo $detailid; ?>" class="cr-detail-row" style="display:none;">
+            <td colspan="<?php echo $rescols; ?>">
+              <div class="cr-detail-inner p-3">
+                <div class="row g-3">
+
+                  <!-- Quién sí ha visto -->
+                  <div class="col-md-6">
+                    <h6 class="text-success fw-bold mb-2">
+                      <?php echo $OUTPUT->pix_icon('i/valid', '', 'core', ['class' => 'me-1']); ?>
+                      <?php echo get_string('haveviewed', 'report_courseradar'); ?>
+                      <span class="badge bg-success ms-1"><?php echo $unique; ?></span>
+                    </h6>
+                    <?php if ($unique > 0): ?>
+                    <div class="cr-seen-list">
+                      <ul class="list-unstyled mb-0">
+                        <?php foreach ($students as $uid => $stu): ?>
+                        <?php if (isset($bycm[$cmid][$uid])): ?>
+                        <?php $urow = $bycm[$cmid][$uid]; ?>
+                        <li class="d-flex align-items-center py-1 border-bottom border-light gap-2">
+                          <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>"
+                             class="flex-grow-1 text-truncate">
+                            <?php echo fullname($stu); ?>
+                          </a>
+                          <?php if ($hastracking && isset($completionbyuser[$cmid][$uid])): ?>
+                            <span class="badge bg-success cr-badge-mod" title="<?php echo get_string('completion', 'report_courseradar'); ?>">✓</span>
+                          <?php endif; ?>
+                          <span class="badge bg-primary cr-student-badge">
+                            <?php echo $urow->views; ?> <?php echo get_string('times', 'report_courseradar'); ?>
+                          </span>
+                          <small class="text-muted text-nowrap">
+                            <?php echo userdate($urow->lastaccess, get_string('strftimedatetimeshort', 'langconfig')); ?>
+                          </small>
+                        </li>
                         <?php endif; ?>
-                      </div>
+                        <?php endforeach; ?>
+                      </ul>
+                    </div>
+                    <?php else: ?>
+                    <p class="text-muted small mb-0"><?php echo get_string('noviewsyet', 'report_courseradar'); ?></p>
+                    <?php endif; ?>
+                  </div>
 
-                      <!-- Quién NO ha visto -->
-                      <div class="col-md-6">
-                        <h6 class="text-danger fw-bold mb-2">
-                          <?php echo $OUTPUT->pix_icon('i/invalid', '', 'core', ['class' => 'me-1']); ?>
-                          <?php echo get_string('haventviewed', 'report_courseradar'); ?>
-                          <span class="badge bg-danger ms-1"><?php echo $notseen; ?></span>
-                        </h6>
-                        <?php if ($notseen > 0): ?>
-                        <div class="cr-seen-list">
-                          <ul class="list-unstyled mb-0">
-                          <?php foreach ($students as $uid => $stu): ?>
-                            <?php if (!isset($bycm[$cmid][$uid])): ?>
-                            <li class="py-1 border-bottom border-light">
-                              <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>">
-                                <?php echo fullname($stu); ?>
-                              </a>
-                            </li>
-                            <?php endif; ?>
-                          <?php endforeach; ?>
-                          </ul>
-                        </div>
-                        <?php else: ?>
-                        <p class="text-success small mb-0 fw-semibold">
-                          <?php echo get_string('allstudentsviewed', 'report_courseradar'); ?>
-                        </p>
+                  <!-- Quién NO ha visto -->
+                  <div class="col-md-6">
+                    <h6 class="text-danger fw-bold mb-2">
+                      <?php echo $OUTPUT->pix_icon('i/invalid', '', 'core', ['class' => 'me-1']); ?>
+                      <?php echo get_string('haventviewed', 'report_courseradar'); ?>
+                      <span class="badge bg-danger ms-1"><?php echo $notseen; ?></span>
+                    </h6>
+                    <?php if ($notseen > 0): ?>
+                    <div class="cr-seen-list">
+                      <ul class="list-unstyled mb-0">
+                        <?php foreach ($students as $uid => $stu): ?>
+                        <?php if (!isset($bycm[$cmid][$uid])): ?>
+                        <li class="d-flex align-items-center py-1 border-bottom border-light gap-2">
+                          <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>"
+                             class="flex-grow-1 text-truncate">
+                            <?php echo fullname($stu); ?>
+                          </a>
+                          <?php if ($hastracking && isset($completionbyuser[$cmid][$uid])): ?>
+                            <span class="badge bg-success cr-badge-mod" title="<?php echo get_string('completion', 'report_courseradar'); ?>">✓ completado</span>
+                          <?php endif; ?>
+                        </li>
                         <?php endif; ?>
-                      </div>
+                        <?php endforeach; ?>
+                      </ul>
+                    </div>
+                    <?php else: ?>
+                    <p class="text-success small mb-0 fw-semibold">
+                      <?php echo get_string('allstudentsviewed', 'report_courseradar'); ?>
+                    </p>
+                    <?php endif; ?>
+                  </div>
 
-                    </div><!-- /row -->
-                </div><!-- /cr-detail-inner -->
-              </td>
-            </tr>
+                </div>
+              </div>
+            </td>
+          </tr>
 
   <?php endforeach; ?>
 <?php endforeach; ?>
 <?php endif; ?>
 
-          </tbody>
-        </table>
-      </div>
+        </tbody>
+      </table>
     </div>
-  </div><!-- /card recursos -->
+  </div>
+</div><!-- /card recursos -->
 
-  <!-- ── Tabla de actividad por estudiante ─────────────────────── -->
-  <div class="card cr-card mb-4">
-    <div class="card-header bg-white border-bottom py-3">
-      <h5 class="mb-0 fw-bold">
-        <?php echo $OUTPUT->pix_icon('i/group', '', 'core', ['class' => 'me-1']); ?>
-        <?php echo get_string('studentengagement', 'report_courseradar'); ?>
-        <span class="badge bg-secondary ms-2"><?php echo $totalstudents; ?></span>
-      </h5>
-    </div>
-    <div class="card-body p-0">
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-dark">
-            <tr>
-              <th><?php echo get_string('student', 'report_courseradar'); ?></th>
-              <th class="text-center"><?php echo get_string('resourcesvisited', 'report_courseradar'); ?></th>
-              <th style="min-width:180px"><?php echo get_string('coverage', 'report_courseradar'); ?></th>
-              <th class="text-center"><?php echo get_string('totalviews', 'report_courseradar'); ?></th>
-              <th><?php echo get_string('lastactivity', 'report_courseradar'); ?></th>
-              <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
-            </tr>
-          </thead>
-          <tbody>
+<!-- ── Tabla de actividad por estudiante ─────────────────────────────────── -->
+<div class="card cr-card mb-4">
+  <div class="card-header bg-white border-bottom py-3">
+    <h5 class="mb-0 fw-bold">
+      <?php echo $OUTPUT->pix_icon('i/group', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('studentengagement', 'report_courseradar'); ?>
+      <span class="badge bg-secondary ms-2"><?php echo $totalstudents; ?></span>
+    </h5>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" id="cr-students-table">
+        <thead class="table-dark">
+          <tr>
+            <th class="cr-th-sort" onclick="crSortStudents(this,false)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('student', 'report_courseradar'); ?>
+            </th>
+            <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('resourcesvisited', 'report_courseradar'); ?>
+            </th>
+            <th class="cr-th-sort" style="min-width:160px" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('coverage', 'report_courseradar'); ?>
+            </th>
+            <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('totalviews', 'report_courseradar'); ?>
+            </th>
+            <th class="cr-th-sort" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('lastactivity', 'report_courseradar'); ?>
+            </th>
+            <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
+          </tr>
+        </thead>
+        <tbody>
 
 <?php if (empty($students)): ?>
-            <tr>
-              <td colspan="6" class="text-center text-muted py-5">
-                <?php echo get_string('nostudents', 'report_courseradar'); ?>
-              </td>
-            </tr>
+          <tr>
+            <td colspan="6" class="text-center text-muted py-5">
+              <?php echo get_string('nostudents', 'report_courseradar'); ?>
+            </td>
+          </tr>
 <?php else: ?>
 
   <?php foreach ($students as $uid => $stu): ?>
   <?php
-    $visited  = isset($studentlog[$uid]) ? count($studentlog[$uid]) : 0;
-    $totalv   = isset($studentlog[$uid]) ? array_sum($studentlog[$uid]) : 0;
-    $pctstu   = ($totalmodules > 0) ? min(100, round(($visited / $totalmodules) * 100)) : 0;
-    $barstu   = cr_barclass($pctstu);
+    $visited     = isset($studentlog[$uid]) ? count($studentlog[$uid]) : 0;
+    $totalv      = isset($studentlog[$uid]) ? array_sum($studentlog[$uid]) : 0;
+    $pctstu      = ($totalmodules > 0) ? min(100, round(($visited / $totalmodules) * 100)) : 0;
+    $barstu      = cr_barclass($pctstu);
+    $isinactive  = ($totalv === 0);
+    $studetailid = 'crstudetail_' . $uid;
 
-    // Última actividad del estudiante
     $lastact = 0;
     if (isset($studentlog[$uid])) {
         foreach (array_keys($studentlog[$uid]) as $cid) {
@@ -564,111 +958,106 @@ function crToggle(btn, rowId) {
             }
         }
     }
-    $studetailid = 'crstudetail_' . $uid;
-    $isinactive  = ($totalv === 0);
   ?>
-            <tr class="cr-student-row <?php echo ($isactive = !$isactive) ? '' : ''; ?>">
+          <tr class="cr-student-row" data-detail="<?php echo $studetailid; ?>">
 
-              <!-- Nombre del estudiante -->
-              <td>
-                <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>">
-                  <?php echo fullname($stu); ?>
-                </a>
-                <?php if ($isinactive): ?>
-                  <span class="badge bg-danger ms-1 cr-badge-mod">0 interacciones</span>
-                <?php endif; ?>
-              </td>
+            <td data-sort="<?php echo s($stu->lastname . ' ' . $stu->firstname); ?>">
+              <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>">
+                <?php echo fullname($stu); ?>
+              </a>
+              <?php if ($isinactive): ?>
+                <span class="badge bg-danger ms-1 cr-badge-mod">0</span>
+              <?php endif; ?>
+            </td>
 
-              <!-- Recursos visitados -->
-              <td class="text-center">
-                <span class="fw-semibold <?php echo ($visited === 0 ? 'cr-zero' : ($visited === $totalmodules ? 'text-success' : '')); ?>">
-                  <?php echo $visited; ?>/<?php echo $totalmodules; ?>
-                </span>
-              </td>
+            <td class="text-center"
+                data-sort="<?php echo $visited; ?>">
+              <span class="fw-semibold <?php echo $visited === 0 ? 'cr-zero' : ($visited === $totalmodules ? 'text-success' : ''); ?>">
+                <?php echo $visited; ?>/<?php echo $totalmodules; ?>
+              </span>
+            </td>
 
-              <!-- Cobertura -->
-              <td>
-                <div class="progress" title="<?php echo $pctstu; ?>%">
-                  <div class="progress-bar <?php echo $barstu; ?>"
-                       role="progressbar"
-                       style="width:<?php echo $pctstu; ?>%"
-                       aria-valuenow="<?php echo $pctstu; ?>"
-                       aria-valuemin="0"
-                       aria-valuemax="100">
-                    <?php if ($pctstu >= 15): echo $pctstu . '%'; endif; ?>
-                  </div>
+            <td data-sort="<?php echo $pctstu; ?>">
+              <div class="progress" title="<?php echo $pctstu; ?>%">
+                <div class="progress-bar <?php echo $barstu; ?>"
+                     role="progressbar" style="width:<?php echo $pctstu; ?>%"
+                     aria-valuenow="<?php echo $pctstu; ?>" aria-valuemin="0" aria-valuemax="100">
+                  <?php if ($pctstu >= 15): echo $pctstu . '%'; endif; ?>
                 </div>
-                <?php if ($pctstu < 15): ?>
-                  <small class="text-muted"><?php echo $pctstu; ?>%</small>
-                <?php endif; ?>
-              </td>
+              </div>
+              <?php if ($pctstu < 15): ?><small class="text-muted"><?php echo $pctstu; ?>%</small><?php endif; ?>
+            </td>
 
-              <!-- Total vistas -->
-              <td class="text-center fw-bold <?php echo ($totalv === 0 ? 'cr-zero' : ''); ?>">
-                <?php echo $totalv; ?>
-              </td>
+            <td class="text-center fw-bold <?php echo $totalv === 0 ? 'cr-zero' : ''; ?>"
+                data-sort="<?php echo $totalv; ?>">
+              <?php echo $totalv; ?>
+            </td>
 
-              <!-- Última actividad -->
-              <td>
-                <small class="text-muted">
-                  <?php echo $lastact
+            <td data-sort="<?php echo $lastact; ?>">
+              <small class="text-muted">
+                <?php echo $lastact
                     ? userdate($lastact, get_string('strftimedatetimeshort', 'langconfig'))
                     : get_string('never'); ?>
-                </small>
-              </td>
+              </small>
+            </td>
 
-              <!-- Botón detalle -->
-              <td class="text-center">
-                <button class="btn btn-sm btn-outline-secondary"
-                        type="button"
-                        onclick="crToggle(this, '<?php echo $studetailid; ?>')">
-                  <?php echo $OUTPUT->pix_icon('i/search', '', 'core'); ?>
-                </button>
-              </td>
-            </tr>
+            <td class="text-center">
+              <button class="btn btn-sm btn-outline-secondary"
+                      type="button"
+                      onclick="crToggle(this,'<?php echo $studetailid; ?>')">
+                <?php echo $OUTPUT->pix_icon('i/search', '', 'core'); ?>
+              </button>
+            </td>
+          </tr>
 
-            <!-- Detalle del estudiante -->
-            <tr id="<?php echo $studetailid; ?>" class="cr-detail-row" style="display:none;">
-              <td colspan="6">
-                <div class="cr-detail-inner p-3">
-                    <?php foreach ($bysection as $snum => $section): ?>
-                    <div class="mb-2">
-                      <small class="text-muted fw-semibold d-block mb-1">
-                        <?php echo $section['name']; ?>
-                      </small>
-                      <div class="d-flex flex-wrap gap-1">
-                        <?php foreach ($section['cms'] as $cm): ?>
-                        <?php
-                          $cmid    = $cm->id;
-                          $seen    = isset($studentlog[$uid][$cmid]);
-                          $svcount = $seen ? $studentlog[$uid][$cmid] : 0;
-                          $iconurl = $cm->get_icon_url()->out(false);
-                        ?>
-                        <span class="badge <?php echo $seen ? 'bg-success' : 'bg-light text-dark border'; ?> cr-student-badge d-flex align-items-center gap-1"
-                              title="<?php echo s(format_string($cm->name)); ?><?php echo $seen ? ' (' . $svcount . ' ' . get_string('times', 'report_courseradar') . ')' : ''; ?>">
-                          <img src="<?php echo $iconurl; ?>" alt="" style="width:13px;height:13px;">
-                          <?php echo shorten_text(format_string($cm->name), 22); ?>
-                          <?php if ($seen && $svcount > 1): ?>
-                            <span class="opacity-75">(<?php echo $svcount; ?>)</span>
-                          <?php endif; ?>
-                        </span>
-                        <?php endforeach; ?>
-                      </div>
-                    </div>
+          <!-- Detalle del estudiante -->
+          <tr id="<?php echo $studetailid; ?>" class="cr-detail-row" style="display:none;">
+            <td colspan="6">
+              <div class="cr-detail-inner p-3">
+                <?php foreach ($bysection as $snum => $section): ?>
+                <div class="mb-2">
+                  <small class="text-muted fw-semibold d-block mb-1"><?php echo $section['name']; ?></small>
+                  <div class="d-flex flex-wrap gap-1">
+                    <?php foreach ($section['cms'] as $cm): ?>
+                    <?php
+                      $cmid    = $cm->id;
+                      $seen    = isset($studentlog[$uid][$cmid]);
+                      $svcount = $seen ? $studentlog[$uid][$cmid] : 0;
+                      $completed_stu = $completionenabled && $cm->completion > 0
+                                    && isset($completionbyuser[$cmid][$uid]);
+                      $badgeclass = $completed_stu
+                          ? 'bg-success'
+                          : ($seen ? 'bg-primary' : 'bg-light text-dark border');
+                      $iconurl = $cm->get_icon_url()->out(false);
+                      $title = s(format_string($cm->name));
+                      if ($seen)        { $title .= ' (' . $svcount . ' ' . get_string('times', 'report_courseradar') . ')'; }
+                      if ($completed_stu) { $title .= ' ✓'; }
+                    ?>
+                    <span class="badge <?php echo $badgeclass; ?> cr-student-badge d-flex align-items-center gap-1"
+                          title="<?php echo $title; ?>">
+                      <img src="<?php echo $iconurl; ?>" alt="" style="width:13px;height:13px;">
+                      <?php echo shorten_text(format_string($cm->name), 22); ?>
+                      <?php if ($seen && $svcount > 1): ?>
+                        <span class="opacity-75">(<?php echo $svcount; ?>)</span>
+                      <?php endif; ?>
+                      <?php if ($completed_stu): ?><span>✓</span><?php endif; ?>
+                    </span>
                     <?php endforeach; ?>
-                </div><!-- /cr-detail-inner -->
-              </td>
-            </tr>
+                  </div>
+                </div>
+                <?php endforeach; ?>
+              </div>
+            </td>
+          </tr>
 
   <?php endforeach; ?>
 <?php endif; ?>
 
-          </tbody>
-        </table>
-      </div>
+        </tbody>
+      </table>
     </div>
-  </div><!-- /card estudiantes -->
+  </div>
+</div><!-- /card estudiantes -->
 
 </div><!-- /container -->
-
 <?php echo $OUTPUT->footer(); ?>

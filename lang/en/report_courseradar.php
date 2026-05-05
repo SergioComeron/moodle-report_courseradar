@@ -39,3 +39,24 @@ $string['lastactivity']        = 'Last activity';
 $string['nostudents']          = 'No students enrolled in this course.';
 $string['nointeractions']      = 'No interactions recorded in this period.';
 $string['viewprofile']         = 'View profile';
+
+// At-risk panel
+$string['atrisk']              = 'At-risk students';
+$string['atrisk_info']         = 'Students with no interactions or very low activity in the selected period.';
+$string['atrisk_noactivity']   = 'No interactions';
+$string['atrisk_lowactivity']  = 'Low engagement (< 30% resources visited)';
+
+// Charts
+$string['activityovertime']    = 'Activity over time';
+$string['activitypattern']     = 'Activity pattern (day × hour)';
+$string['noactivitydata']      = 'No activity data for this period.';
+$string['weeklyaggregated']    = 'Aggregated by week (period > 90 days)';
+
+// Completion
+$string['completion']          = 'Completion';
+$string['completiondisabled']  = 'Activity completion is not enabled for this course.';
+$string['completednoftrack']   = 'No completion tracking';
+
+// Sort
+$string['sortby']              = 'Click to sort';
+$string['resetsort']           = 'Back to section view';
