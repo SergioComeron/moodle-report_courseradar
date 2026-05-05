@@ -914,7 +914,7 @@ function crSortStudents(th, isNumeric) {
     </span>
   </div>
   <?php if (count($bytype) > 1): ?>
-  <div class="px-3 pt-3 pb-2 border-bottom d-flex flex-wrap gap-2 align-items-center">
+  <div class="px-3 pt-3 pb-2 border-bottom d-flex flex-wrap gap-3 align-items-center">
     <small class="text-muted fw-semibold me-1"><?php echo get_string('filterbytype', 'report_courseradar'); ?></small>
     <?php foreach (array_keys($bytype) as $mod): ?>
     <button type="button"
