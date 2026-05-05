@@ -178,7 +178,7 @@ if ($totalstudents > 0 && $totalmodules > 0) {
                 AND userid {$insql}
               GROUP BY userid, timecreated / 604800
               ORDER BY userid, weekts";
-    $weekdata = []; // [uid][weekts] => cnt.
+    $weekdata = []; // Keyed by uid then week timestamp: view count.
     $rs = $DB->get_recordset_sql($sql5, $logparams);
     foreach ($rs as $row) {
         $weekdata[$row->userid][(int)$row->weekts] = (int)$row->cnt;
@@ -274,7 +274,9 @@ foreach ($validcms as $cmid => $cm) {
         $bytype[$mod]['views'] += (int)$logdata[$cmid]->totalviews;
     }
 }
-uasort($bytype, function($a, $b) { return $b['views'] - $a['views']; });
+// Sort by total views descending.
+$typeviews = array_column($bytype, 'views');
+array_multisort($typeviews, SORT_DESC, $bytype);
 
 // Max views across types for CSS bar normalisation.
 $typemaxviews = !empty($bytype) ? max(array_column($bytype, 'views')) : 1;
@@ -294,6 +296,23 @@ foreach ($students as $uid => $stu) {
     }
 }
 $totalrisk = count($atrisknone) + count($atrisklow);
+
+// Top least-visited resources.
+$topunseen = report_courseradar_top_unseen($validcms, $logdata, $totalstudents);
+
+// Days inactive per student (derived from last activity, no extra query).
+$daysinactive = [];
+foreach ($students as $uid => $stu) {
+    $lastact = 0;
+    if (isset($studentlog[$uid])) {
+        foreach (array_keys($studentlog[$uid]) as $cid) {
+            if (isset($bycm[$cid][$uid]) && (int)$bycm[$cid][$uid]->lastaccess > $lastact) {
+                $lastact = (int)$bycm[$cid][$uid]->lastaccess;
+            }
+        }
+    }
+    $daysinactive[$uid] = report_courseradar_days_inactive($lastact);
+}
 
 // Activity chart data.
 $chartlabels  = [];
@@ -652,6 +671,75 @@ function crSortStudents(th, isNumeric) {
       </div>
       <?php endif; ?>
 
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
+<!-- ── Top recursos menos visitados ────────────────────────────────────── -->
+<?php if (!empty($topunseen)): ?>
+<div class="card cr-card mb-4 border-warning border-2">
+  <div class="card-header bg-white border-bottom py-3">
+    <h5 class="mb-0 fw-bold text-warning">
+      <?php echo $OUTPUT->pix_icon('i/risk_xss', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('topunseen', 'report_courseradar'); ?>
+      <span class="badge bg-warning text-dark ms-2"><?php echo count($topunseen); ?></span>
+    </h5>
+    <small class="text-muted"><?php echo get_string('topunseeninfo', 'report_courseradar'); ?></small>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:2rem">#</th>
+            <th><?php echo get_string('resource', 'report_courseradar'); ?></th>
+            <th style="min-width:160px"><?php echo get_string('coverage', 'report_courseradar'); ?></th>
+            <th class="text-center"><?php echo get_string('uniquestudents', 'report_courseradar'); ?></th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($topunseen as $rank => $item): ?>
+        <?php
+          $cm      = $item['cm'];
+          $iconurl = $cm->get_icon_url()->out(false);
+          $cmurl   = $cm->url;
+          $pct     = $item['pct'];
+          $barclass = report_courseradar_barclass($pct);
+        ?>
+        <tr>
+          <td class="text-muted fw-bold"><?php echo $rank + 1; ?></td>
+          <td>
+            <img src="<?php echo $iconurl; ?>" alt="" style="width:18px;height:18px;" class="me-1">
+            <?php if ($cmurl): ?>
+              <a href="<?php echo $cmurl->out(false); ?>" target="_blank">
+                <?php echo format_string($cm->name); ?>
+              </a>
+            <?php else: ?>
+              <?php echo format_string($cm->name); ?>
+            <?php endif; ?>
+          </td>
+          <td>
+            <div class="progress" style="height:18px;" title="<?php echo $pct; ?>%">
+              <div class="progress-bar <?php echo $barclass; ?>"
+                   style="width:<?php echo $pct; ?>%">
+                <?php if ($pct >= 15): echo $pct . '%'; endif; ?>
+              </div>
+            </div>
+            <?php if ($pct < 15): ?>
+              <small class="text-muted"><?php echo $pct; ?>%</small>
+            <?php endif; ?>
+          </td>
+          <td class="text-center">
+            <span class="fw-bold"><?php echo $item['unique']; ?></span>
+            <small class="text-danger ms-1">
+              (<?php echo $item['unseen']; ?> <?php echo get_string('notviewed', 'report_courseradar'); ?>)
+            </small>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -1073,6 +1161,10 @@ function crSortStudents(th, isNumeric) {
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('lastactivity', 'report_courseradar'); ?>
             </th>
+            <th class="cr-th-sort text-center" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('daysinactive', 'report_courseradar'); ?>
+            </th>
             <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
           </tr>
         </thead>
@@ -1080,7 +1172,7 @@ function crSortStudents(th, isNumeric) {
 
 <?php if (empty($students)): ?>
           <tr>
-            <td colspan="6" class="text-center text-muted py-5">
+            <td colspan="7" class="text-center text-muted py-5">
               <?php echo get_string('nostudents', 'report_courseradar'); ?>
             </td>
           </tr>
@@ -1144,6 +1236,26 @@ function crSortStudents(th, isNumeric) {
                     ? userdate($lastact, get_string('strftimedatetimeshort', 'langconfig'))
                     : get_string('never'); ?>
               </small>
+            </td>
+
+            <?php
+              $days  = $daysinactive[$uid];
+              $badge = report_courseradar_inactive_class($days);
+            ?>
+            <td class="text-center" data-sort="<?php echo $days; ?>">
+              <?php if ($days < 0): ?>
+                <span class="badge <?php echo $badge; ?>">
+                  <?php echo get_string('neveraccessed', 'report_courseradar'); ?>
+                </span>
+              <?php elseif ($days === 0): ?>
+                <span class="badge bg-success text-white">
+                  &lt; 1
+                </span>
+              <?php else: ?>
+                <span class="badge <?php echo $badge; ?>">
+                  <?php echo $days; ?>d
+                </span>
+              <?php endif; ?>
             </td>
 
             <td class="text-center">

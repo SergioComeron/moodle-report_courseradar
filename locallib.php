@@ -92,3 +92,78 @@ function report_courseradar_atrisk(array $students, array $studentlog, int $tota
     }
     return $result;
 }
+
+/**
+ * Returns the number of whole days elapsed since a Unix timestamp.
+ *
+ * @param int $lastaccess Unix timestamp of the last access; 0 means never.
+ * @return int Days since last access, or -1 if never accessed.
+ */
+function report_courseradar_days_inactive(int $lastaccess): int {
+    if ($lastaccess <= 0) {
+        return -1;
+    }
+    return (int)floor((time() - $lastaccess) / DAYSECS);
+}
+
+/**
+ * Returns the Bootstrap badge class for a given number of inactive days.
+ *
+ * @param int $days Days inactive; -1 means never accessed.
+ * @return string CSS classes for the badge.
+ */
+function report_courseradar_inactive_class(int $days): string {
+    if ($days < 0) {
+        return 'bg-danger text-white';
+    }
+    if ($days <= 7) {
+        return 'bg-success text-white';
+    }
+    if ($days <= 14) {
+        return 'bg-warning text-dark';
+    }
+    return 'bg-danger text-white';
+}
+
+/**
+ * Returns visible course modules sorted by student coverage ascending (least viewed first).
+ *
+ * Modules with 100% coverage are excluded since they need no attention.
+ *
+ * @param array $validcms      Course modules [cmid => cm_info].
+ * @param array $logdata       Aggregate log data [cmid => stdClass{uniqueusers,...}].
+ * @param int   $totalstudents Total number of enrolled students.
+ * @param int   $limit         Maximum number of results to return.
+ * @return array Sorted array of ['cm', 'unique', 'unseen', 'pct'] entries.
+ */
+function report_courseradar_top_unseen(
+    array $validcms,
+    array $logdata,
+    int $totalstudents,
+    int $limit = 10
+): array {
+    if ($totalstudents <= 0) {
+        return [];
+    }
+    $items = [];
+    foreach ($validcms as $cmid => $cm) {
+        if (!$cm->visible) {
+            continue;
+        }
+        $unique = isset($logdata[$cmid]) ? (int)$logdata[$cmid]->uniqueusers : 0;
+        $pct    = min(100, (int)round(($unique / $totalstudents) * 100));
+        if ($pct >= 100) {
+            continue;
+        }
+        $items[] = [
+            'cm'     => $cm,
+            'unique' => $unique,
+            'unseen' => $totalstudents - $unique,
+            'pct'    => $pct,
+        ];
+    }
+    usort($items, function ($a, $b) {
+        return $a['pct'] - $b['pct'];
+    });
+    return array_slice($items, 0, $limit);
+}

@@ -210,4 +210,119 @@ final class lib_test extends \advanced_testcase {
 
         $this->assertFalse(has_capability('report/courseradar:view', $context, $student->id));
     }
+
+    // Tests for report_courseradar_days_inactive.
+
+    /**
+     * Test that a timestamp of zero returns -1 (never accessed).
+     */
+    public function test_days_inactive_never_accessed(): void {
+        $this->assertEquals(-1, report_courseradar_days_inactive(0));
+    }
+
+    /**
+     * Test that a recent timestamp returns the correct number of days.
+     */
+    public function test_days_inactive_three_days_ago(): void {
+        $lastaccess = time() - 3 * DAYSECS;
+        $this->assertEquals(3, report_courseradar_days_inactive($lastaccess));
+    }
+
+    /**
+     * Test that today's timestamp returns zero days inactive.
+     */
+    public function test_days_inactive_today(): void {
+        $this->assertEquals(0, report_courseradar_days_inactive(time()));
+    }
+
+    // Tests for report_courseradar_inactive_class.
+
+    /**
+     * Test that -1 (never) returns the danger class.
+     */
+    public function test_inactive_class_never(): void {
+        $this->assertStringContainsString('bg-danger', report_courseradar_inactive_class(-1));
+    }
+
+    /**
+     * Test that 7 days or fewer returns the success class.
+     */
+    public function test_inactive_class_recent(): void {
+        $this->assertStringContainsString('bg-success', report_courseradar_inactive_class(7));
+        $this->assertStringContainsString('bg-success', report_courseradar_inactive_class(0));
+    }
+
+    /**
+     * Test that 8-14 days returns the warning class.
+     */
+    public function test_inactive_class_moderate(): void {
+        $this->assertStringContainsString('bg-warning', report_courseradar_inactive_class(8));
+        $this->assertStringContainsString('bg-warning', report_courseradar_inactive_class(14));
+    }
+
+    /**
+     * Test that more than 14 days returns the danger class.
+     */
+    public function test_inactive_class_long(): void {
+        $this->assertStringContainsString('bg-danger', report_courseradar_inactive_class(15));
+        $this->assertStringContainsString('bg-danger', report_courseradar_inactive_class(60));
+    }
+
+    // Tests for report_courseradar_top_unseen.
+
+    /**
+     * Test that modules with 100% coverage are excluded.
+     */
+    public function test_top_unseen_excludes_fully_seen(): void {
+        $cm = (object)['id' => 1, 'visible' => 1];
+        $logdata = [1 => (object)['uniqueusers' => 5]];
+        $result  = report_courseradar_top_unseen([1 => $cm], $logdata, 5);
+        $this->assertEmpty($result);
+    }
+
+    /**
+     * Test that hidden modules are excluded.
+     */
+    public function test_top_unseen_excludes_hidden(): void {
+        $cm = (object)['id' => 2, 'visible' => 0];
+        $result = report_courseradar_top_unseen([2 => $cm], [], 5);
+        $this->assertEmpty($result);
+    }
+
+    /**
+     * Test that results are sorted by coverage ascending (least seen first).
+     */
+    public function test_top_unseen_sorted_ascending(): void {
+        $cm1 = (object)['id' => 1, 'visible' => 1];
+        $cm2 = (object)['id' => 2, 'visible' => 1];
+        $logdata = [
+            1 => (object)['uniqueusers' => 8],
+            2 => (object)['uniqueusers' => 2],
+        ];
+        $result = report_courseradar_top_unseen([1 => $cm1, 2 => $cm2], $logdata, 10);
+        $this->assertEquals(2, $result[0]['cm']->id);
+        $this->assertEquals(1, $result[1]['cm']->id);
+    }
+
+    /**
+     * Test that the limit parameter is respected.
+     */
+    public function test_top_unseen_limit(): void {
+        $cms = [];
+        $logdata = [];
+        for ($i = 1; $i <= 15; $i++) {
+            $cms[$i] = (object)['id' => $i, 'visible' => 1];
+        }
+        $result = report_courseradar_top_unseen($cms, $logdata, 10, 5);
+        $this->assertCount(5, $result);
+    }
+
+    /**
+     * Test that zero students returns an empty array.
+     */
+    public function test_top_unseen_no_students(): void {
+        $cm = (object)['id' => 1, 'visible' => 1];
+        $result = report_courseradar_top_unseen([1 => $cm], [], 0);
+        $this->assertEmpty($result);
+    }
 }
