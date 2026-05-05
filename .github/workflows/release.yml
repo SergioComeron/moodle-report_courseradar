@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build ZIP
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          ZIPNAME="report_courseradar-${TAG}.zip"
+          cd ..
+          zip -r "$ZIPNAME" courseradar \
+            --exclude "courseradar/.git/*" \
+            --exclude "courseradar/.github/*" \
+            --exclude "courseradar/.gitignore" \
+            --exclude "courseradar/CONTRIBUTING.md"
+          mv "$ZIPNAME" courseradar/
+        shell: bash
+
+      - name: Extract changelog entry
+        id: changelog
+        run: |
+          TAG=${GITHUB_REF#refs/tags/v}
+          NOTES=$(awk "/## \[${TAG}\]/{flag=1; next} /## \[/{flag=0} flag" CHANGELOG.md | sed '/^$/d')
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog.outputs.notes }}
+          files: report_courseradar-*.zip
+          draft: false
+          prerelease: false
