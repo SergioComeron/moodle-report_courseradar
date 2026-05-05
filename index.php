@@ -453,6 +453,13 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-type-filter-btn   { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; transition: all .15s; }
 </style>
 <script>
+/* ── Inicializar tooltips Bootstrap ───────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+        new bootstrap.Tooltip(el);
+    });
+});
+
 /* ── Toggle fila de detalle ────────────────────────────────────────────────── */
 function crToggle(btn, rowId) {
     var row = document.getElementById(rowId);
@@ -986,24 +993,39 @@ function crSortStudents(th, isNumeric) {
             <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('totalviews', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+                <?php echo get_string('totalviews_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('uniquestudents', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+                <?php echo get_string('uniquestudents_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="cr-th-sort" style="min-width:160px" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('coverage', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+                <?php echo get_string('coverage_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <?php if ($hasanycompletion): ?>
             <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('completion', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+                <?php echo get_string('completion_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <?php endif; ?>
             <th class="cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('lastaccess', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+                <?php echo get_string('lastaccess_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
           </tr>
@@ -1248,22 +1270,37 @@ function crSortStudents(th, isNumeric) {
             <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('resourcesvisited', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+                <?php echo get_string('resourcesvisited_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="cr-th-sort" style="min-width:160px" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('coverage', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+                <?php echo get_string('studentcoverage_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('totalviews', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+                <?php echo get_string('studentviews_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('lastactivity', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+                <?php echo get_string('lastactivity_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="cr-th-sort text-center" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('daysinactive', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+                <?php echo get_string('daysinactive_desc', 'report_courseradar'); ?>
+              </small>
             </th>
             <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
           </tr>
@@ -1412,6 +1449,8 @@ function crSortStudents(th, isNumeric) {
                     <?php foreach ($sparklines[$uid] as $bar): ?>
                     <div class="cr-spark-bar"
                          style="height:<?php echo $bar['height']; ?>%"
+                         data-bs-toggle="tooltip"
+                         data-bs-placement="top"
                          title="<?php echo s($bar['label']); ?>: <?php echo $bar['cnt']; ?> <?php echo get_string('times', 'report_courseradar'); ?>">
                     </div>
                     <?php endforeach; ?>
