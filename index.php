@@ -283,13 +283,6 @@ ksort($bysection);
 // Número de columnas de la tabla de recursos (varía con finalización)
 $rescols = $hasanycompletion ? 8 : 7;
 
-// Column count varies when completion is shown.
-function report_courseradar_barclass(int $pct): string {
-    if ($pct >= 70) { return 'bg-success'; }
-    if ($pct >= 30) { return 'bg-warning'; }
-    return 'bg-danger';
-}
-
 // Output.
 echo $OUTPUT->header();
 ?>
