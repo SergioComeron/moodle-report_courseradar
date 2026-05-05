@@ -2,8 +2,9 @@
 #
 # pre-push hook for report_courseradar
 #
-# Runs PHPUnit tests locally before pushing to any branch other than
-# main and dev (those are covered by GitHub Actions CI).
+# Runs PHPUnit tests locally before pushing to any branch except main.
+# main is covered by GitHub Actions CI after the release-please PR is merged.
+# dev and feature branches always run tests locally before pushing.
 #
 # Activate once per clone:
 #   make setup
@@ -15,8 +16,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 
     branch="${remote_ref#refs/heads/}"
 
-    # main and dev are tested by CI — skip locally.
-    if [ "$branch" = "main" ] || [ "$branch" = "dev" ]; then
+    # Only skip for main — release-please manages that flow via CI.
+    if [ "$branch" = "main" ]; then
         exit 0
     fi
 

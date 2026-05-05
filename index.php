@@ -288,6 +288,10 @@ if (!empty($bytype) && $totalinteractions > 0) {
     );
     $typechart->add_series($typeseries);
     $typechart->set_labels(array_keys($typerev));
+    $xaxis = new \core\chart_axis();
+    $xaxis->set_min(0);
+    $xaxis->set_stepsize(1);
+    $typechart->set_xaxis($xaxis);
 }
 
 // At-risk students.
