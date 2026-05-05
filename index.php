@@ -126,26 +126,44 @@ if ($totalstudents > 0 && $totalmodules > 0) {
     }
     $rs->close();
 
-    // Raw timestamps for chart and heatmap.
-    $sql3 = "SELECT timecreated
+    // Activity per day (aggregated in SQL — avoids fetching raw timestamps).
+    // FLOOR(timecreated / 86400) * 86400 gives the UTC midnight timestamp for each day.
+    $sql3 = "SELECT (timecreated / 86400) * 86400 AS dayts, COUNT(*) AS cnt
                FROM {logstore_standard_log}
               WHERE courseid     = :courseid
                 AND action       = :action
                 AND contextlevel = :contextlevel
                 AND timecreated >= :datefrom
                 AND timecreated <= :dateto
-                AND userid {$insql}";
+                AND userid {$insql}
+              GROUP BY timecreated / 86400
+              ORDER BY dayts";
     $rs = $DB->get_recordset_sql($sql3, $logparams);
     foreach ($rs as $row) {
-        $ts    = (int)$row->timecreated;
-        $day   = date('Y-m-d', $ts);
-        $dow   = (int)date('w', $ts);
-        $block = (int)floor((int)date('G', $ts) / 4);
-        $byday[$day]           = ($byday[$day] ?? 0) + 1;
-        $heatmap[$dow][$block]++;
+        $byday[date('Y-m-d', (int)$row->dayts)] = (int)$row->cnt;
     }
     $rs->close();
-    ksort($byday);
+
+    // Heatmap: interactions per (day-of-week, 4-hour block), aggregated in SQL.
+    // Unix epoch (ts=0) was a Thursday; (days_since_epoch + 4) % 7 gives PHP date('w').
+    // ts % 86400 / 14400 gives the 4-hour block (0-5).
+    $sql4 = "SELECT MOD(timecreated / 86400 + 4, 7)     AS dow,
+                    timecreated % 86400 / 14400          AS timeblock,
+                    COUNT(*)                             AS cnt
+               FROM {logstore_standard_log}
+              WHERE courseid     = :courseid
+                AND action       = :action
+                AND contextlevel = :contextlevel
+                AND timecreated >= :datefrom
+                AND timecreated <= :dateto
+                AND userid {$insql}
+              GROUP BY MOD(timecreated / 86400 + 4, 7),
+                       timecreated % 86400 / 14400";
+    $rs = $DB->get_recordset_sql($sql4, $logparams);
+    foreach ($rs as $row) {
+        $heatmap[(int)$row->dow][(int)$row->timeblock] = (int)$row->cnt;
+    }
+    $rs->close();
 }
 
 // Completion data.
