@@ -154,8 +154,8 @@ $completions       = []; // Keyed by cmid: count of students who completed.
 $completionbyuser  = []; // Keyed [cmid][uid]: completion state.
 
 if ($completionenabled && $totalstudents > 0 && $totalmodules > 0) {
-    [$cminsql,  $cminp]  = $DB->get_in_or_equal(array_keys($validcms), SQL_PARAMS_NAMED, 'cm');
-    [$stcinsql, $stcinp] = $DB->get_in_or_equal($studentids,           SQL_PARAMS_NAMED, 'stc');
+    [$cminsql, $cminp] = $DB->get_in_or_equal(array_keys($validcms), SQL_PARAMS_NAMED, 'cm');
+    [$stcinsql, $stcinp] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'stc');
     $rs = $DB->get_recordset_sql(
         "SELECT coursemoduleid AS cmid, userid, completionstate
            FROM {course_modules_completion}
@@ -163,7 +163,7 @@ if ($completionenabled && $totalstudents > 0 && $totalmodules > 0) {
         array_merge($cminp, $stcinp)
     );
     foreach ($rs as $row) {
-        $completions[$row->cmid]                   = ($completions[$row->cmid] ?? 0) + 1;
+        $completions[$row->cmid] = ($completions[$row->cmid] ?? 0) + 1;
         $completionbyuser[$row->cmid][$row->userid] = (int)$row->completionstate;
     }
     $rs->close();
@@ -172,7 +172,10 @@ if ($completionenabled && $totalstudents > 0 && $totalmodules > 0) {
 $hasanycompletion = false;
 if ($completionenabled) {
     foreach ($validcms as $cm) {
-        if ($cm->completion > 0) { $hasanycompletion = true; break; }
+        if ($cm->completion > 0) {
+            $hasanycompletion = true;
+            break;
+        }
     }
 }
 
@@ -183,10 +186,13 @@ $maxname           = get_string('none', 'report_courseradar');
 $engagements       = [];
 
 foreach ($validcms as $cmid => $cm) {
-    $v = isset($logdata[$cmid]) ? (int)$logdata[$cmid]->totalviews  : 0;
+    $v = isset($logdata[$cmid]) ? (int)$logdata[$cmid]->totalviews : 0;
     $u = isset($logdata[$cmid]) ? (int)$logdata[$cmid]->uniqueusers : 0;
     $totalinteractions += $v;
-    if ($v > $maxviews) { $maxviews = $v; $maxname = format_string($cm->name); }
+    if ($v > $maxviews) {
+        $maxviews = $v;
+        $maxname = format_string($cm->name);
+    }
     if ($totalstudents > 0) {
         $engagements[] = ($u / $totalstudents) * 100;
     }
@@ -194,17 +200,17 @@ foreach ($validcms as $cmid => $cm) {
 $avgengagement = $engagements ? round(array_sum($engagements) / count($engagements)) : 0;
 
 // At-risk students.
-$atrisk_none = [];
-$atrisk_low  = [];
+$atrisknone = [];
+$atrisklow  = [];
 foreach ($students as $uid => $stu) {
     $visited = isset($studentlog[$uid]) ? count($studentlog[$uid]) : 0;
     if ($visited === 0) {
-        $atrisk_none[$uid] = $stu;
+        $atrisknone[$uid] = $stu;
     } else if ($totalmodules > 0 && ($visited / $totalmodules) < 0.30) {
-        $atrisk_low[$uid] = $stu;
+        $atrisklow[$uid] = $stu;
     }
 }
-$totalrisk = count($atrisk_none) + count($atrisk_low);
+$totalrisk = count($atrisknone) + count($atrisklow);
 
 // Activity chart data.
 $chartlabels  = [];
@@ -218,7 +224,7 @@ if (!empty($byday)) {
         $byweek = [];
         foreach ($byday as $day => $cnt) {
             $ts     = strtotime($day);
-            $isodow = (int)date('N', $ts); // 1=Mon...7=Sun
+            $isodow = (int)date('N', $ts); // 1 = Mon ... 7 = Sun.
             $monds  = $ts - ($isodow - 1) * 86400;
             $wk     = date('Y-m-d', $monds);
             $byweek[$wk] = ($byweek[$wk] ?? 0) + $cnt;
@@ -253,7 +259,9 @@ if (!empty($chartvalues)) {
 $heatmax = 1;
 foreach ($heatmap as $drow) {
     foreach ($drow as $val) {
-        if ($val > $heatmax) { $heatmax = $val; }
+        if ($val > $heatmax) {
+            $heatmax = $val;
+        }
     }
 }
 
@@ -282,7 +290,7 @@ foreach ($validcms as $cmid => $cm) {
 }
 ksort($bysection);
 
-// Número de columnas de la tabla de recursos (varía con finalización)
+// Number of resource table columns (varies when completion is enabled).
 $rescols = $hasanycompletion ? 8 : 7;
 
 // Output.
@@ -516,15 +524,15 @@ function crSortStudents(th, isNumeric) {
   <div class="card-body">
     <div class="row g-4">
 
-      <?php if (!empty($atrisk_none)): ?>
+      <?php if (!empty($atrisknone)): ?>
       <div class="col-md-6">
         <h6 class="fw-bold text-danger mb-2">
           <?php echo $OUTPUT->pix_icon('i/invalid', '', 'core', ['class' => 'me-1']); ?>
           <?php echo get_string('atrisk_noactivity', 'report_courseradar'); ?>
-          <span class="badge bg-danger ms-1"><?php echo count($atrisk_none); ?></span>
+          <span class="badge bg-danger ms-1"><?php echo count($atrisknone); ?></span>
         </h6>
         <div class="cr-risk-names">
-          <?php foreach ($atrisk_none as $uid => $stu): ?>
+          <?php foreach ($atrisknone as $uid => $stu): ?>
           <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>">
             <?php echo fullname($stu); ?>
           </a>
@@ -533,15 +541,15 @@ function crSortStudents(th, isNumeric) {
       </div>
       <?php endif; ?>
 
-      <?php if (!empty($atrisk_low)): ?>
+      <?php if (!empty($atrisklow)): ?>
       <div class="col-md-6">
         <h6 class="fw-bold text-warning mb-2">
           <?php echo $OUTPUT->pix_icon('i/warning', '', 'core', ['class' => 'me-1']); ?>
           <?php echo get_string('atrisk_lowactivity', 'report_courseradar'); ?>
-          <span class="badge bg-warning text-dark ms-1"><?php echo count($atrisk_low); ?></span>
+          <span class="badge bg-warning text-dark ms-1"><?php echo count($atrisklow); ?></span>
         </h6>
         <div class="cr-risk-names">
-          <?php foreach ($atrisk_low as $uid => $stu): ?>
+          <?php foreach ($atrisklow as $uid => $stu): ?>
           <?php
             $lv  = count($studentlog[$uid] ?? []);
             $lpct = $totalmodules > 0 ? round(($lv / $totalmodules) * 100) : 0;

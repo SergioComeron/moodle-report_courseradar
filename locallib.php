@@ -27,7 +27,7 @@ defined('MOODLE_INTERNAL') || die();
 /**
  * Returns the Bootstrap progress bar colour class based on a percentage.
  *
- * @param  int    $pct Percentage (0-100).
+ * @param int $pct Percentage (0-100).
  * @return string Bootstrap background class.
  */
 function report_courseradar_barclass(int $pct): string {
@@ -46,7 +46,7 @@ function report_courseradar_barclass(int $pct): string {
  * Users that hold the report/courseradar:view capability are considered
  * non-students and are excluded from interaction tracking.
  *
- * @param  \context_course $context Course context.
+ * @param \context_course $context Course context.
  * @return array Associative array [userid => stdClass] sorted by lastname, firstname.
  */
 function report_courseradar_get_students(\context_course $context): array {
@@ -54,8 +54,8 @@ function report_courseradar_get_students(\context_course $context): array {
         $context,
         '',
         0,
-        'u.id, u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic,
-         u.middlename, u.alternatename, u.picture, u.imagealt, u.email'
+        'u.id, u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic,' .
+        ' u.middlename, u.alternatename, u.picture, u.imagealt, u.email'
     );
     $canviewids = array_keys(
         get_enrolled_users($context, 'report/courseradar:view', 0, 'u.id')
@@ -67,16 +67,18 @@ function report_courseradar_get_students(\context_course $context): array {
             $students[$u->id] = $u;
         }
     }
-    uasort($students, fn($a, $b) => strcmp($a->lastname . $a->firstname, $b->lastname . $b->firstname));
+    uasort($students, function($a, $b) {
+        return strcmp($a->lastname . $a->firstname, $b->lastname . $b->firstname);
+    });
     return $students;
 }
 
 /**
  * Returns the at-risk students for a course in the given period.
  *
- * @param  array $students   Array of student objects [userid => stdClass].
- * @param  array $studentlog Per-student log data [userid][cmid] => views.
- * @param  int   $totalmodules Total number of course modules.
+ * @param array $students   Array of student objects [userid => stdClass].
+ * @param array $studentlog Per-student log data [userid][cmid] => views.
+ * @param int   $totalmodules Total number of course modules.
  * @return array ['none' => [...], 'low' => [...]] keyed by risk level.
  */
 function report_courseradar_atrisk(array $students, array $studentlog, int $totalmodules): array {
