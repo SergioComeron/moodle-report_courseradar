@@ -30,7 +30,7 @@ jobs:
                 --state open --json number --jq '.[0].number')
           if [ -n "$PR" ] && [ "$PR" != "null" ]; then
             echo "Merging release PR #$PR"
-            gh pr merge "$PR" --merge
+            gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --merge
           else
             echo "No open release PR found"
           fi

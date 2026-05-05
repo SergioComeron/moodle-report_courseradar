@@ -70,14 +70,13 @@ $string['plugindesc']          = 'Seguimiento de las interacciones de los estudi
 $string['pluginname']          = 'Course Radar';
 
 $string['resetfilter']         = 'Restablecer';
-$string['searchstudent']       = 'Buscar alumno...';
-$string['showhidden']          = 'Mostrar actividades ocultas';
-
 $string['resetsort']           = 'Volver a vista por secciones';
 $string['resource']            = 'Recurso / Actividad';
 $string['resourceactivity']    = 'Recursos y Actividades';
 $string['resourcesvisited']    = 'Recursos visitados';
 $string['resourcesvisited_desc'] = 'Recursos distintos abiertos';
+$string['searchstudent']       = 'Buscar alumno...';
+$string['showhidden']          = 'Mostrar actividades ocultas';
 $string['sortby']              = 'Haz clic para ordenar';
 $string['student']             = 'Estudiante';
 $string['studentcoverage_desc'] = '% de recursos del curso visitados';
