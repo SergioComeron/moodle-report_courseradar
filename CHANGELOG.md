@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.1.0...v1.2.0) (2026-05-05)
+
+
+### Features
+
+* add client-side resource type filter above resources table ([e8efa3d](https://github.com/SergioComeron/moodle-report_courseradar/commit/e8efa3db534169db24ab3af828883ebce2798c68))
+* add column description subtitles and sparkline Bootstrap tooltips ([abb9368](https://github.com/SergioComeron/moodle-report_courseradar/commit/abb93688a169ed274ae6b56143ae2b3acc7c07b2))
+* add course-level visit tracking as summary card and student column ([ba2e7ea](https://github.com/SergioComeron/moodle-report_courseradar/commit/ba2e7ea271bb9047cac0201c7fc07f60bd12f9bd))
+* add real-time student search input to engagement table ([e22a1d5](https://github.com/SergioComeron/moodle-report_courseradar/commit/e22a1d5f62a43b0cbaa169815866b67b07c30864))
+* add resource type filter to least visited resources card ([8fdf57b](https://github.com/SergioComeron/moodle-report_courseradar/commit/8fdf57b8fbaf79608af9fcc3875b5017cb862c5e))
+* add toggle to show/hide hidden activities in resources table ([3800ec7](https://github.com/SergioComeron/moodle-report_courseradar/commit/3800ec7df86b414950521d2d8ab92a2fb3ec4f19))
+
+
+### Bug Fixes
+
+* add text-white to at-risk badges to prevent red-on-red cascade ([baa46ac](https://github.com/SergioComeron/moodle-report_courseradar/commit/baa46ac369be66d35a1fb263e4836c7ab2cf88c6))
+* checkout to 'courseradar' folder so ZIP extracts with correct name ([9f538e4](https://github.com/SergioComeron/moodle-report_courseradar/commit/9f538e41efa9f796967354e349466fd33355073a))
+* correct lang ES string ordering and add --repo to gh pr merge ([649a6b3](https://github.com/SergioComeron/moodle-report_courseradar/commit/649a6b3e83b04076b5970b77e1359377b92f1d1f))
+* increase gap between resource type filter buttons ([f4aae5c](https://github.com/SergioComeron/moodle-report_courseradar/commit/f4aae5c04b8891fb302d38d1e3d4494f939917dd))
+* remove hover background on sortable column headers ([e6f9866](https://github.com/SergioComeron/moodle-report_courseradar/commit/e6f98662fc65b7541ef90668271a8ccc2d72667e))
+* reset Bootstrap CSS var on thead hover to eliminate gray tint ([3338558](https://github.com/SergioComeron/moodle-report_courseradar/commit/33385581235e96caaa49911c09e61c1f83850b95))
+* restore student search threshold to &gt; 5 students ([bc1cbb1](https://github.com/SergioComeron/moodle-report_courseradar/commit/bc1cbb1237071830265b824c264573b15d02943a))
+* show student search input regardless of student count ([83eb881](https://github.com/SergioComeron/moodle-report_courseradar/commit/83eb881cc5f8beaf01dc34e6838d85a8e39cc6dc))
+* suppress Bootstrap hover background on dark table headers ([99a876f](https://github.com/SergioComeron/moodle-report_courseradar/commit/99a876f1fb01c5028fb9a4ce93f948c6d1e86cdb))
+* switch table headers from table-dark to table-light for subtler look ([4688071](https://github.com/SergioComeron/moodle-report_courseradar/commit/46880718b22f573e1c9625661fc50b3c60100eae))
+* use explicit margin on type filter buttons instead of gap ([aa05cf5](https://github.com/SergioComeron/moodle-report_courseradar/commit/aa05cf5e24396390c597305f89fb54f19f8a527c))
+
 ## [1.1.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.0.0...v1.1.0) (2026-05-05)
 
 
