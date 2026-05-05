@@ -276,22 +276,10 @@ foreach ($validcms as $cmid => $cm) {
 }
 uasort($bytype, function($a, $b) { return $b['views'] - $a['views']; });
 
-// Module type chart (horizontal bar, lowest value at bottom = reversed for display).
-$typechart = null;
-if (!empty($bytype) && $totalinteractions > 0) {
-    $typerev = array_reverse($bytype, true);
-    $typechart = new \core\chart_bar();
-    $typechart->set_horizontal(true);
-    $typeseries = new \core\chart_series(
-        get_string('totalviews', 'report_courseradar'),
-        array_values(array_column($typerev, 'views'))
-    );
-    $typechart->add_series($typeseries);
-    $typechart->set_labels(array_keys($typerev));
-    $xaxis = new \core\chart_axis();
-    $xaxis->set_min(0);
-    $xaxis->set_stepsize(1);
-    $typechart->set_xaxis($xaxis);
+// Max views across types for CSS bar normalisation.
+$typemaxviews = !empty($bytype) ? max(array_column($bytype, 'views')) : 1;
+if ($typemaxviews === 0) {
+    $typemaxviews = 1;
 }
 
 // At-risk students.
@@ -741,8 +729,8 @@ function crSortStudents(th, isNumeric) {
 </div>
 <?php endif; ?>
 
-<!-- ── Resumen por tipo de módulo ────────────────────────────────────────── -->
-<?php if ($typechart): ?>
+<!-- ── Resumen por tipo de módulo ──────────────────────────────────────────-->
+<?php if (!empty($bytype)): ?>
 <div class="card cr-card mb-4">
   <div class="card-header bg-white border-bottom py-3">
     <h5 class="mb-0 fw-bold">
@@ -751,38 +739,33 @@ function crSortStudents(th, isNumeric) {
     </h5>
   </div>
   <div class="card-body">
-    <div class="row g-3">
-      <div class="col-lg-7">
-        <div style="position:relative; height:<?php echo max(120, count($bytype) * 40); ?>px;">
-          <?php echo $OUTPUT->render($typechart); ?>
+    <?php foreach ($bytype as $mod => $data): ?>
+    <?php
+      $pct = (int)round(($data['views'] / $typemaxviews) * 100);
+      $avg = $data['modules'] > 0 ? round($data['views'] / $data['modules'], 1) : 0;
+    ?>
+    <div class="d-flex align-items-center mb-2 gap-2">
+      <div style="width:90px; flex-shrink:0; text-align:right;">
+        <span class="badge bg-light text-dark border cr-badge-mod"><?php echo $mod; ?></span>
+      </div>
+      <div class="flex-grow-1">
+        <div class="progress" style="height:22px;">
+          <div class="progress-bar bg-primary"
+               role="progressbar"
+               style="width:<?php echo $pct; ?>%; min-width:<?php echo $data['views'] > 0 ? '2rem' : '0'; ?>;"
+               title="<?php echo $data['views']; ?> <?php echo get_string('totalviews', 'report_courseradar'); ?>">
+            <?php if ($pct >= 15): ?>
+              <?php echo $data['views']; ?> <?php echo get_string('times', 'report_courseradar'); ?>
+            <?php endif; ?>
+          </div>
         </div>
       </div>
-      <div class="col-lg-5">
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th><?php echo get_string('type', 'report_courseradar'); ?></th>
-                <th class="text-center"><?php echo get_string('modules', 'report_courseradar'); ?></th>
-                <th class="text-center"><?php echo get_string('totalviews', 'report_courseradar'); ?></th>
-                <th class="text-center"><?php echo get_string('avgviews', 'report_courseradar'); ?></th>
-              </tr>
-            </thead>
-            <tbody>
-            <?php foreach ($bytype as $mod => $data): ?>
-            <?php $avg = $data['modules'] > 0 ? round($data['views'] / $data['modules'], 1) : 0; ?>
-            <tr>
-              <td><span class="badge bg-light text-dark border cr-badge-mod"><?php echo $mod; ?></span></td>
-              <td class="text-center"><?php echo $data['modules']; ?></td>
-              <td class="text-center fw-bold"><?php echo $data['views']; ?></td>
-              <td class="text-center text-muted"><?php echo $avg; ?></td>
-            </tr>
-            <?php endforeach; ?>
-            </tbody>
-          </table>
-        </div>
+      <div style="width:80px; flex-shrink:0;" class="text-end">
+        <small class="fw-bold"><?php echo $data['views']; ?></small>
+        <small class="text-muted ms-1">(<?php echo $data['modules']; ?> <?php echo get_string('modules', 'report_courseradar'); ?>)</small>
       </div>
     </div>
+    <?php endforeach; ?>
   </div>
 </div>
 <?php endif; ?>
