@@ -257,10 +257,12 @@ foreach ($heatmap as $drow) {
     }
 }
 
-// Day names via Moodle calendar strings.
-$daynames = [];
-for ($i = 0; $i < 7; $i++) {
-    $daynames[$i] = get_string('shortday' . ($i + 1), 'calendar');
+// Day names: full names from calendar component, abbreviated to 3 chars.
+$daykeymap = [0 => 'sunday', 1 => 'monday', 2 => 'tuesday', 3 => 'wednesday',
+              4 => 'thursday', 5 => 'friday', 6 => 'saturday'];
+$daynames  = [];
+foreach ($daykeymap as $dow => $key) {
+    $daynames[$dow] = mb_substr(get_string($key, 'calendar'), 0, 3);
 }
 $dayorder  = [1, 2, 3, 4, 5, 6, 0]; // Lun→Dom
 $timeslots = ['0–3h', '4–7h', '8–11h', '12–15h', '16–19h', '20–23h'];
