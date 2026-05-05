@@ -300,6 +300,15 @@ $totalrisk = count($atrisknone) + count($atrisklow);
 // Top least-visited resources.
 $topunseen = report_courseradar_top_unseen($validcms, $logdata, $totalstudents);
 
+// Unique module types present in topunseen (for its filter bar).
+$topunseentypes = [];
+foreach ($topunseen as $item) {
+    $mod = $item['cm']->modname;
+    if (!in_array($mod, $topunseentypes, true)) {
+        $topunseentypes[] = $mod;
+    }
+}
+
 // Days inactive per student (derived from last activity, no extra query).
 $daysinactive = [];
 foreach ($students as $uid => $stu) {
@@ -492,6 +501,28 @@ function crSortResources(th, isNumeric) {
 }
 
 function crResetSort() { location.reload(); }
+
+/* ── Filtro de tipos en "Recursos menos visitados" ─────────────────────────── */
+function crFilterTopUnseen(btn, modname) {
+    var wasActive = btn.classList.contains('cr-type-active');
+    if (wasActive) {
+        btn.classList.remove('cr-type-active', 'btn-warning');
+        btn.classList.add('btn-outline-secondary');
+    } else {
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('cr-type-active', 'btn-warning');
+    }
+
+    var hiddenTypes = [];
+    document.querySelectorAll('.cr-topunseen-filter-btn').forEach(function(b) {
+        if (!b.classList.contains('cr-type-active')) { hiddenTypes.push(b.dataset.modname); }
+    });
+
+    var tbody = document.querySelector('#cr-topunseen-table tbody');
+    tbody.querySelectorAll('tr[data-modname]').forEach(function(row) {
+        row.style.display = hiddenTypes.indexOf(row.dataset.modname) >= 0 ? 'none' : '';
+    });
+}
 
 /* ── Filtro de tipos de recurso ────────────────────────────────────────────── */
 function crFilterType(btn, modname) {
@@ -728,9 +759,22 @@ function crSortStudents(th, isNumeric) {
     </h5>
     <small class="text-muted"><?php echo get_string('topunseeninfo', 'report_courseradar'); ?></small>
   </div>
+  <?php if (count($topunseentypes) > 1): ?>
+  <div class="px-3 pt-3 pb-2 border-bottom d-flex flex-wrap gap-3 align-items-center">
+    <small class="text-muted fw-semibold me-1"><?php echo get_string('filterbytype', 'report_courseradar'); ?></small>
+    <?php foreach ($topunseentypes as $mod): ?>
+    <button type="button"
+            class="btn btn-sm btn-warning cr-topunseen-filter-btn cr-type-active cr-badge-mod"
+            data-modname="<?php echo s($mod); ?>"
+            onclick="crFilterTopUnseen(this,'<?php echo s($mod); ?>')">
+      <?php echo s($mod); ?>
+    </button>
+    <?php endforeach; ?>
+  </div>
+  <?php endif; ?>
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle mb-0">
+      <table class="table table-sm table-hover align-middle mb-0" id="cr-topunseen-table">
         <thead class="table-light">
           <tr>
             <th style="width:2rem">#</th>
@@ -748,7 +792,7 @@ function crSortStudents(th, isNumeric) {
           $pct     = $item['pct'];
           $barclass = report_courseradar_barclass($pct);
         ?>
-        <tr>
+        <tr data-modname="<?php echo s($cm->modname); ?>">
           <td class="text-muted fw-bold"><?php echo $rank + 1; ?></td>
           <td>
             <img src="<?php echo $iconurl; ?>" alt="" style="width:18px;height:18px;" class="me-1">
