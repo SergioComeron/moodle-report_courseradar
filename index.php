@@ -1307,7 +1307,7 @@ function crSortStudents(th, isNumeric) {
       <span class="badge bg-secondary ms-2"><?php echo $totalstudents; ?></span>
     </h5>
   </div>
-  <?php if ($totalstudents > 0): ?>
+  <?php if ($totalstudents > 5): ?>
   <div class="px-3 pt-3 pb-2 border-bottom">
     <input type="search" class="form-control form-control-sm" id="cr-student-search"
            placeholder="<?php echo get_string('searchstudent', 'report_courseradar'); ?>"
