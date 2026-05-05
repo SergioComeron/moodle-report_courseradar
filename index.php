@@ -773,7 +773,7 @@ function crSortStudents(th, isNumeric) {
     <h5 class="mb-0 fw-bold text-danger">
       <?php echo $OUTPUT->pix_icon('i/warning', '', 'core', ['class' => 'me-1']); ?>
       <?php echo get_string('atrisk', 'report_courseradar'); ?>
-      <span class="badge bg-danger ms-2"><?php echo $totalrisk; ?></span>
+      <span class="badge bg-danger text-white ms-2"><?php echo $totalrisk; ?></span>
     </h5>
     <small class="text-muted"><?php echo get_string('atrisk_info', 'report_courseradar'); ?></small>
   </div>
@@ -785,7 +785,7 @@ function crSortStudents(th, isNumeric) {
         <h6 class="fw-bold text-danger mb-2">
           <?php echo $OUTPUT->pix_icon('i/invalid', '', 'core', ['class' => 'me-1']); ?>
           <?php echo get_string('atrisk_noactivity', 'report_courseradar'); ?>
-          <span class="badge bg-danger ms-1"><?php echo count($atrisknone); ?></span>
+          <span class="badge bg-danger text-white ms-1"><?php echo count($atrisknone); ?></span>
         </h6>
         <div class="cr-risk-names">
           <?php foreach ($atrisknone as $uid => $stu): ?>
