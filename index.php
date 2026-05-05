@@ -750,42 +750,44 @@ function crSortStudents(th, isNumeric) {
       <?php echo get_string('moduletypesummary', 'report_courseradar'); ?>
     </h5>
   </div>
-  <div class="row g-0">
-    <div class="col-md-6">
-      <div class="p-3">
-        <?php echo $OUTPUT->render($typechart); ?>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div style="position:relative; height:<?php echo max(120, count($bytype) * 40); ?>px;">
+          <?php echo $OUTPUT->render($typechart); ?>
+        </div>
       </div>
-    </div>
-    <div class="col-md-6 border-start">
-      <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
-          <thead class="table-light">
+      <div class="col-lg-5">
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th><?php echo get_string('type', 'report_courseradar'); ?></th>
+                <th class="text-center"><?php echo get_string('modules', 'report_courseradar'); ?></th>
+                <th class="text-center"><?php echo get_string('totalviews', 'report_courseradar'); ?></th>
+                <th class="text-center"><?php echo get_string('avgviews', 'report_courseradar'); ?></th>
+              </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($bytype as $mod => $data): ?>
+            <?php $avg = $data['modules'] > 0 ? round($data['views'] / $data['modules'], 1) : 0; ?>
             <tr>
-              <th><?php echo get_string('type', 'report_courseradar'); ?></th>
-              <th class="text-center"><?php echo get_string('modules', 'report_courseradar'); ?></th>
-              <th class="text-center"><?php echo get_string('totalviews', 'report_courseradar'); ?></th>
-              <th class="text-center"><?php echo get_string('avgviews', 'report_courseradar'); ?></th>
+              <td><span class="badge bg-light text-dark border cr-badge-mod"><?php echo $mod; ?></span></td>
+              <td class="text-center"><?php echo $data['modules']; ?></td>
+              <td class="text-center fw-bold"><?php echo $data['views']; ?></td>
+              <td class="text-center text-muted"><?php echo $avg; ?></td>
             </tr>
-          </thead>
-          <tbody>
-          <?php foreach ($bytype as $mod => $data): ?>
-          <?php $avg = $data['modules'] > 0 ? round($data['views'] / $data['modules'], 1) : 0; ?>
-          <tr>
-            <td><span class="badge bg-light text-dark border cr-badge-mod"><?php echo $mod; ?></span></td>
-            <td class="text-center"><?php echo $data['modules']; ?></td>
-            <td class="text-center fw-bold"><?php echo $data['views']; ?></td>
-            <td class="text-center text-muted"><?php echo $avg; ?></td>
-          </tr>
-          <?php endforeach; ?>
-          </tbody>
-        </table>
+            <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
 </div>
 <?php endif; ?>
 
-<!-- ── Tabla de recursos por sección ─────────────────────────────────────── -->
+<!-- ── Tabla de recursos por sección ──────────────────────────────────────-->
 <div class="card cr-card mb-4">
   <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
     <h5 class="mb-0 fw-bold">
