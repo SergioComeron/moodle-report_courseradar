@@ -160,7 +160,7 @@ final class lib_test extends \advanced_testcase {
         $s2 = $this->getDataGenerator()->create_and_enrol(
             $course,
             'student',
-            ['firstname' => 'Luis', 'lastname' => 'Álvarez']
+            ['firstname' => 'Luis', 'lastname' => 'Alvarez']
         );
 
         $students = report_courseradar_get_students($context);
