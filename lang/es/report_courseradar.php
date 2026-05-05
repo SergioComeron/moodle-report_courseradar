@@ -1,4 +1,27 @@
 <?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Spanish language strings for report_courseradar.
+ *
+ * @package    report_courseradar
+ * @copyright  2025 Sergio Comerón <sergiocomeron@icloud.com>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+
 defined('MOODLE_INTERNAL') || die();
 
 $string['pluginname']          = 'Course Radar';
@@ -40,23 +63,19 @@ $string['nostudents']          = 'No hay estudiantes matriculados en este curso.
 $string['nointeractions']      = 'No hay interacciones registradas en este período.';
 $string['viewprofile']         = 'Ver perfil';
 
-// Panel de riesgo
 $string['atrisk']              = 'Alumnos en riesgo';
 $string['atrisk_info']         = 'Alumnos sin interacciones o con muy poca actividad en el período seleccionado.';
 $string['atrisk_noactivity']   = 'Sin ninguna interacción';
 $string['atrisk_lowactivity']  = 'Participación baja (< 30% recursos visitados)';
 
-// Gráficos
 $string['activityovertime']    = 'Actividad a lo largo del tiempo';
-$string['activitypattern']     = 'Patrón de actividad (día × hora)';
+$string['activitypattern']     = 'Patrón de actividad (día x hora)';
 $string['noactivitydata']      = 'Sin datos de actividad en este período.';
 $string['weeklyaggregated']    = 'Agrupado por semana (período > 90 días)';
 
-// Finalización
 $string['completion']          = 'Finalización';
 $string['completiondisabled']  = 'La finalización de actividades no está habilitada en este curso.';
 $string['completednoftrack']   = 'Sin rastreo de finalización';
 
-// Ordenación
 $string['sortby']              = 'Haz clic para ordenar';
 $string['resetsort']           = 'Volver a vista por secciones';

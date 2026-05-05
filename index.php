@@ -1,25 +1,49 @@
 <?php
-require_once(__DIR__ . '/../../config.php');
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-// ─── Parámetros ───────────────────────────────────────────────────────────────
+/**
+ * Course Radar report - main page.
+ *
+ * @package    report_courseradar
+ * @copyright  2025 Sergio Comerón <sergiocomeron@icloud.com>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+
+require_once(__DIR__ . '/../../config.php');
+require_once($CFG->dirroot . '/report/courseradar/locallib.php');
+
+// Parameters.
 $courseid    = required_param('id', PARAM_INT);
 $datefromstr = optional_param('datefrom', '', PARAM_ALPHANUMEXT);
-$datetostr   = optional_param('dateto',   '', PARAM_ALPHANUMEXT);
+$datetostr   = optional_param('dateto', '', PARAM_ALPHANUMEXT);
 
-// ─── Curso y contexto ────────────────────────────────────────────────────────
+// Course and context.
 $course  = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
 $context = context_course::instance($courseid);
 
 require_login($course);
 require_capability('report/courseradar:view', $context);
 
-// ─── Fechas ───────────────────────────────────────────────────────────────────
+// Date range.
 $defaultfrom = $course->startdate ?: mktime(0, 0, 0, 1, 1, (int)date('Y'));
 if (!$defaultfrom) {
     $defaultfrom = mktime(0, 0, 0, 1, 1, (int)date('Y'));
 }
 $datefrom = $datefromstr ? strtotime($datefromstr) : $defaultfrom;
-$dateto   = $datetostr   ? strtotime($datetostr . ' 23:59:59') : time();
+$dateto   = $datetostr ? strtotime($datetostr . ' 23:59:59') : time();
 if (!$datefrom || $datefrom < 0) {
     $datefrom = $defaultfrom;
 }
@@ -30,13 +54,13 @@ $datefromformat = date('Y-m-d', $datefrom);
 $datetoformat   = date('Y-m-d', $dateto);
 $isfiltered     = ($datefromstr !== '' || $datetostr !== '');
 
-// ─── Configuración de página ─────────────────────────────────────────────────
+// Page setup.
 $PAGE->set_url(new moodle_url('/report/courseradar/index.php', ['id' => $courseid]));
 $PAGE->set_pagelayout('report');
 $PAGE->set_title(get_string('pluginname', 'report_courseradar'));
 $PAGE->set_heading($course->fullname);
 
-// ─── Módulos del curso ───────────────────────────────────────────────────────
+// Course modules.
 $modinfo  = get_fast_modinfo($course);
 $validcms = [];
 foreach ($modinfo->get_cms() as $cm) {
@@ -46,28 +70,16 @@ foreach ($modinfo->get_cms() as $cm) {
 }
 $totalmodules = count($validcms);
 
-// ─── Usuarios: separar estudiantes de profesores ─────────────────────────────
-$allenrolled = get_enrolled_users(
-    $context, '', 0,
-    'u.id, u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic, u.middlename, u.alternatename, u.picture, u.imagealt, u.email'
-);
-$canviewids = array_keys(get_enrolled_users($context, 'report/courseradar:view', 0, 'u.id'));
-
-$students = [];
-foreach ($allenrolled as $u) {
-    if (!in_array($u->id, $canviewids)) {
-        $students[$u->id] = $u;
-    }
-}
-uasort($students, fn($a, $b) => strcmp($a->lastname . $a->firstname, $b->lastname . $b->firstname));
+// Enrolled users: separate students from teachers/managers.
+$students      = report_courseradar_get_students($context);
 $totalstudents = count($students);
 $studentids    = array_keys($students);
 
-// ─── Consultas de log ────────────────────────────────────────────────────────
-$logdata    = [];   // [cmid] => {totalviews, uniqueusers, lastaccess}
-$bycm       = [];   // [cmid][uid] => {views, lastaccess}
-$studentlog = [];   // [uid][cmid] => views
-$byday      = [];   // ['Y-m-d'] => count
+// Log queries.
+$logdata    = []; // Keyed by cmid: totalviews, uniqueusers, lastaccess.
+$bycm       = []; // Keyed [cmid][uid]: views, lastaccess.
+$studentlog = []; // Keyed [uid][cmid]: view count.
+$byday      = []; // Keyed by Y-m-d date string: interaction count.
 $heatmap    = array_fill(0, 7, array_fill(0, 6, 0)); // [dow 0=Sun][4h block 0-5]
 
 if ($totalstudents > 0 && $totalmodules > 0) {
@@ -81,7 +93,7 @@ if ($totalstudents > 0 && $totalmodules > 0) {
         'dateto'       => $dateto,
     ], $inparams);
 
-    // Totales por módulo
+    // Aggregate totals per module.
     $sql = "SELECT contextinstanceid AS cmid,
                    COUNT(*)               AS totalviews,
                    COUNT(DISTINCT userid) AS uniqueusers,
@@ -96,7 +108,7 @@ if ($totalstudents > 0 && $totalmodules > 0) {
              GROUP BY contextinstanceid";
     $logdata = $DB->get_records_sql($sql, $logparams);
 
-    // Detalle por usuario y módulo
+    // Per-user per-module detail.
     $sql2 = "SELECT contextinstanceid AS cmid, userid,
                     COUNT(*) AS views, MAX(timecreated) AS lastaccess
                FROM {logstore_standard_log}
@@ -114,7 +126,7 @@ if ($totalstudents > 0 && $totalmodules > 0) {
     }
     $rs->close();
 
-    // Timestamps para gráfico de actividad y heatmap
+    // Raw timestamps for chart and heatmap.
     $sql3 = "SELECT timecreated
                FROM {logstore_standard_log}
               WHERE courseid     = :courseid
@@ -136,10 +148,10 @@ if ($totalstudents > 0 && $totalmodules > 0) {
     ksort($byday);
 }
 
-// ─── Datos de finalización ───────────────────────────────────────────────────
+// Completion data.
 $completionenabled = !empty($course->enablecompletion);
-$completions       = [];   // [cmid] => count of students who completed
-$completionbyuser  = [];   // [cmid][uid] => completionstate
+$completions       = []; // Keyed by cmid: count of students who completed.
+$completionbyuser  = []; // Keyed [cmid][uid]: completion state.
 
 if ($completionenabled && $totalstudents > 0 && $totalmodules > 0) {
     [$cminsql,  $cminp]  = $DB->get_in_or_equal(array_keys($validcms), SQL_PARAMS_NAMED, 'cm');
@@ -164,7 +176,7 @@ if ($completionenabled) {
     }
 }
 
-// ─── Estadísticas de resumen ─────────────────────────────────────────────────
+// Summary statistics.
 $totalinteractions = 0;
 $maxviews          = 0;
 $maxname           = get_string('none', 'report_courseradar');
@@ -181,7 +193,7 @@ foreach ($validcms as $cmid => $cm) {
 }
 $avgengagement = $engagements ? round(array_sum($engagements) / count($engagements)) : 0;
 
-// ─── Alumnos en riesgo ───────────────────────────────────────────────────────
+// At-risk students.
 $atrisk_none = [];
 $atrisk_low  = [];
 foreach ($students as $uid => $stu) {
@@ -194,7 +206,7 @@ foreach ($students as $uid => $stu) {
 }
 $totalrisk = count($atrisk_none) + count($atrisk_low);
 
-// ─── Datos para gráfico de actividad ─────────────────────────────────────────
+// Activity chart data.
 $chartlabels  = [];
 $chartvalues  = [];
 $chartweekly  = false;
@@ -224,7 +236,7 @@ if (!empty($byday)) {
     }
 }
 
-// ─── Objeto gráfico Moodle ───────────────────────────────────────────────────
+// Build Moodle chart object.
 $chartobj = null;
 if (!empty($chartvalues)) {
     $chartobj = new \core\chart_line();
@@ -237,7 +249,7 @@ if (!empty($chartvalues)) {
     $chartobj->set_labels($chartlabels);
 }
 
-// ─── Heatmap: máximo para normalización ──────────────────────────────────────
+// Heatmap max value for colour normalisation.
 $heatmax = 1;
 foreach ($heatmap as $drow) {
     foreach ($drow as $val) {
@@ -245,7 +257,7 @@ foreach ($heatmap as $drow) {
     }
 }
 
-// ─── Nombres de días (localizados via calendario Moodle) ─────────────────────
+// Day names via Moodle calendar strings.
 $daynames = [];
 for ($i = 0; $i < 7; $i++) {
     $daynames[$i] = get_string('shortday' . ($i + 1), 'calendar');
@@ -253,7 +265,7 @@ for ($i = 0; $i < 7; $i++) {
 $dayorder  = [1, 2, 3, 4, 5, 6, 0]; // Lun→Dom
 $timeslots = ['0–3h', '4–7h', '8–11h', '12–15h', '16–19h', '20–23h'];
 
-// ─── Organizar módulos por sección ───────────────────────────────────────────
+// Organise modules by section.
 $bysection = [];
 foreach ($validcms as $cmid => $cm) {
     $snum = $cm->sectionnum;
@@ -271,14 +283,14 @@ ksort($bysection);
 // Número de columnas de la tabla de recursos (varía con finalización)
 $rescols = $hasanycompletion ? 8 : 7;
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
-function cr_barclass(int $pct): string {
+// Column count varies when completion is shown.
+function report_courseradar_barclass(int $pct): string {
     if ($pct >= 70) { return 'bg-success'; }
     if ($pct >= 30) { return 'bg-warning'; }
     return 'bg-danger';
 }
 
-// ─── Salida ──────────────────────────────────────────────────────────────────
+// Output.
 echo $OUTPUT->header();
 ?>
 <style>
@@ -704,7 +716,7 @@ function crSortStudents(th, isNumeric) {
     $last     = $lastts ? userdate($lastts, get_string('strftimedate', 'langconfig')) : '—';
     $pct      = ($totalstudents > 0) ? min(100, round(($unique / $totalstudents) * 100)) : 0;
     $notseen  = max(0, $totalstudents - $unique);
-    $barclass = cr_barclass($pct);
+    $barclass = report_courseradar_barclass($pct);
     $iconurl  = $cm->get_icon_url()->out(false);
     $cmurl    = $cm->url;
     $detailid = 'crdetail_' . $cmid;
@@ -781,7 +793,7 @@ function crSortStudents(th, isNumeric) {
                 </span>
                 <br>
                 <div class="progress mt-1" style="height:8px;" title="<?php echo $cmplpct; ?>%">
-                  <div class="progress-bar <?php echo cr_barclass($cmplpct); ?>"
+                  <div class="progress-bar <?php echo report_courseradar_barclass($cmplpct); ?>"
                        style="width:<?php echo $cmplpct; ?>%"></div>
                 </div>
               <?php endif; ?>
@@ -946,7 +958,7 @@ function crSortStudents(th, isNumeric) {
     $visited     = isset($studentlog[$uid]) ? count($studentlog[$uid]) : 0;
     $totalv      = isset($studentlog[$uid]) ? array_sum($studentlog[$uid]) : 0;
     $pctstu      = ($totalmodules > 0) ? min(100, round(($visited / $totalmodules) * 100)) : 0;
-    $barstu      = cr_barclass($pctstu);
+    $barstu      = report_courseradar_barclass($pctstu);
     $isinactive  = ($totalv === 0);
     $studetailid = 'crstudetail_' . $uid;
 
