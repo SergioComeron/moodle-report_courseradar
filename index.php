@@ -439,7 +439,6 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-heatmap td        { border-radius: 4px; padding: 5px 4px; text-align: center; min-width: 36px; cursor: default; }
 /* Ordenación */
 .cr-th-sort           { cursor: pointer; user-select: none; white-space: nowrap; }
-thead.table-dark tr:hover > * { --bs-table-accent-bg: transparent !important; background-color: var(--bs-table-bg) !important; }
 .cr-th-sort::after    { content: ' ⇅'; opacity: .35; font-size: .75em; }
 .cr-th-asc::after     { content: ' ▲'; opacity: 1; }
 .cr-th-desc::after    { content: ' ▼'; opacity: 1; }
@@ -980,7 +979,7 @@ function crSortStudents(th, isNumeric) {
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0" id="cr-resources-table">
-        <thead class="table-dark">
+        <thead class="table-light border-bottom border-2">
           <tr>
             <th class="cr-th-sort" onclick="crSortResources(this,false)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
@@ -993,21 +992,21 @@ function crSortStudents(th, isNumeric) {
             <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('totalviews', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('totalviews_desc', 'report_courseradar'); ?>
               </small>
             </th>
             <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('uniquestudents', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('uniquestudents_desc', 'report_courseradar'); ?>
               </small>
             </th>
             <th class="cr-th-sort" style="min-width:160px" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('coverage', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('coverage_desc', 'report_courseradar'); ?>
               </small>
             </th>
@@ -1015,7 +1014,7 @@ function crSortStudents(th, isNumeric) {
             <th class="text-center cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('completion', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('completion_desc', 'report_courseradar'); ?>
               </small>
             </th>
@@ -1023,7 +1022,7 @@ function crSortStudents(th, isNumeric) {
             <th class="cr-th-sort" onclick="crSortResources(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('lastaccess', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('lastaccess_desc', 'report_courseradar'); ?>
               </small>
             </th>
@@ -1261,7 +1260,7 @@ function crSortStudents(th, isNumeric) {
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0" id="cr-students-table">
-        <thead class="table-dark">
+        <thead class="table-light border-bottom border-2">
           <tr>
             <th class="cr-th-sort" onclick="crSortStudents(this,false)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
@@ -1270,35 +1269,35 @@ function crSortStudents(th, isNumeric) {
             <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('resourcesvisited', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('resourcesvisited_desc', 'report_courseradar'); ?>
               </small>
             </th>
             <th class="cr-th-sort" style="min-width:160px" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('coverage', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('studentcoverage_desc', 'report_courseradar'); ?>
               </small>
             </th>
             <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('totalviews', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('studentviews_desc', 'report_courseradar'); ?>
               </small>
             </th>
             <th class="cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('lastactivity', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('lastactivity_desc', 'report_courseradar'); ?>
               </small>
             </th>
             <th class="cr-th-sort text-center" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('daysinactive', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;opacity:.7;">
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('daysinactive_desc', 'report_courseradar'); ?>
               </small>
             </th>
