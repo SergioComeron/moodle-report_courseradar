@@ -77,3 +77,7 @@ $string['viewprofile']         = 'View profile';
 
 
 $string['weeklyaggregated']    = 'Aggregated by week (period > 90 days)';
+$string['moduletypesummary'] = 'Interactions by resource type';
+$string['modules'] = 'Modules';
+$string['avgviews'] = 'Avg. views / module';
+$string['weeklyactivity'] = 'Weekly activity';

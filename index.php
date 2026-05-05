@@ -164,6 +164,51 @@ if ($totalstudents > 0 && $totalmodules > 0) {
         $heatmap[(int)$row->dow][(int)$row->timeblock] = (int)$row->cnt;
     }
     $rs->close();
+
+    // Weekly interactions per student for sparklines (604800 = seconds in a week).
+    $sql5 = "SELECT userid,
+                    (timecreated / 604800) * 604800 AS weekts,
+                    COUNT(*)                        AS cnt
+               FROM {logstore_standard_log}
+              WHERE courseid     = :courseid
+                AND action       = :action
+                AND contextlevel = :contextlevel
+                AND timecreated >= :datefrom
+                AND timecreated <= :dateto
+                AND userid {$insql}
+              GROUP BY userid, timecreated / 604800
+              ORDER BY userid, weekts";
+    $weekdata = []; // [uid][weekts] => cnt.
+    $rs = $DB->get_recordset_sql($sql5, $logparams);
+    foreach ($rs as $row) {
+        $weekdata[$row->userid][(int)$row->weekts] = (int)$row->cnt;
+    }
+    $rs->close();
+}
+
+// Pre-compute sparkline bars for every student.
+$weekslots = [];
+for ($w = (int)($datefrom / 604800) * 604800; $w <= $dateto; $w += 604800) {
+    $weekslots[] = $w;
+}
+
+$sparklines = [];
+foreach ($students as $uid => $stu) {
+    if (empty($weekdata[$uid])) {
+        $sparklines[$uid] = [];
+        continue;
+    }
+    $maxcnt = max($weekdata[$uid]);
+    $bars = [];
+    foreach ($weekslots as $w) {
+        $cnt = $weekdata[$uid][$w] ?? 0;
+        $bars[] = [
+            'cnt'    => $cnt,
+            'height' => $maxcnt > 0 ? max(3, (int)round(($cnt / $maxcnt) * 100)) : 3,
+            'label'  => date('d M', $w),
+        ];
+    }
+    $sparklines[$uid] = $bars;
 }
 
 // Completion data.
@@ -216,6 +261,34 @@ foreach ($validcms as $cmid => $cm) {
     }
 }
 $avgengagement = $engagements ? round(array_sum($engagements) / count($engagements)) : 0;
+
+// Aggregate interactions by module type.
+$bytype = [];
+foreach ($validcms as $cmid => $cm) {
+    $mod = $cm->modname;
+    if (!isset($bytype[$mod])) {
+        $bytype[$mod] = ['modules' => 0, 'views' => 0];
+    }
+    $bytype[$mod]['modules']++;
+    if (isset($logdata[$cmid])) {
+        $bytype[$mod]['views'] += (int)$logdata[$cmid]->totalviews;
+    }
+}
+uasort($bytype, function($a, $b) { return $b['views'] - $a['views']; });
+
+// Module type chart (horizontal bar, lowest value at bottom = reversed for display).
+$typechart = null;
+if (!empty($bytype) && $totalinteractions > 0) {
+    $typerev = array_reverse($bytype, true);
+    $typechart = new \core\chart_bar();
+    $typechart->set_horizontal(true);
+    $typeseries = new \core\chart_series(
+        get_string('totalviews', 'report_courseradar'),
+        array_values(array_column($typerev, 'views'))
+    );
+    $typechart->add_series($typeseries);
+    $typechart->set_labels(array_keys($typerev));
+}
 
 // At-risk students.
 $atrisknone = [];
@@ -351,6 +424,11 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-th-asc::after     { content: ' ▲'; opacity: 1; }
 .cr-th-desc::after    { content: ' ▼'; opacity: 1; }
 #cr-sort-notice       { display: none; }
+/* Sparkline */
+.cr-sparkline         { background: #f0f2f5; border-radius: 4px; padding: 4px 4px 0; display: flex; align-items: flex-end; gap: 2px; height: 44px; }
+.cr-spark-bar         { flex: 1; min-width: 3px; border-radius: 2px 2px 0 0; background: #0d6efd; opacity: .75; transition: opacity .15s; cursor: default; }
+.cr-spark-bar:hover   { opacity: 1; }
+.cr-spark-empty       { color: #adb5bd; font-size: .8rem; }
 </style>
 <script>
 /* ── Toggle fila de detalle ────────────────────────────────────────────────── */
@@ -656,6 +734,50 @@ function crSortStudents(th, isNumeric) {
     </div>
   </div>
 
+</div>
+<?php endif; ?>
+
+<!-- ── Resumen por tipo de módulo ────────────────────────────────────────── -->
+<?php if ($typechart): ?>
+<div class="card cr-card mb-4">
+  <div class="card-header bg-white border-bottom py-3">
+    <h5 class="mb-0 fw-bold">
+      <?php echo $OUTPUT->pix_icon('i/stats', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('moduletypesummary', 'report_courseradar'); ?>
+    </h5>
+  </div>
+  <div class="row g-0">
+    <div class="col-md-6">
+      <div class="p-3">
+        <?php echo $OUTPUT->render($typechart); ?>
+      </div>
+    </div>
+    <div class="col-md-6 border-start">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th><?php echo get_string('type', 'report_courseradar'); ?></th>
+              <th class="text-center"><?php echo get_string('modules', 'report_courseradar'); ?></th>
+              <th class="text-center"><?php echo get_string('totalviews', 'report_courseradar'); ?></th>
+              <th class="text-center"><?php echo get_string('avgviews', 'report_courseradar'); ?></th>
+            </tr>
+          </thead>
+          <tbody>
+          <?php foreach ($bytype as $mod => $data): ?>
+          <?php $avg = $data['modules'] > 0 ? round($data['views'] / $data['modules'], 1) : 0; ?>
+          <tr>
+            <td><span class="badge bg-light text-dark border cr-badge-mod"><?php echo $mod; ?></span></td>
+            <td class="text-center"><?php echo $data['modules']; ?></td>
+            <td class="text-center fw-bold"><?php echo $data['views']; ?></td>
+            <td class="text-center text-muted"><?php echo $avg; ?></td>
+          </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 <?php endif; ?>
 
@@ -1080,6 +1202,21 @@ function crSortStudents(th, isNumeric) {
                   </div>
                 </div>
                 <?php endforeach; ?>
+                <?php if (!empty($sparklines[$uid])): ?>
+                <div class="mt-3">
+                  <small class="text-muted fw-semibold d-block mb-1">
+                    <?php echo get_string('weeklyactivity', 'report_courseradar'); ?>
+                  </small>
+                  <div class="cr-sparkline">
+                    <?php foreach ($sparklines[$uid] as $bar): ?>
+                    <div class="cr-spark-bar"
+                         style="height:<?php echo $bar['height']; ?>%"
+                         title="<?php echo s($bar['label']); ?>: <?php echo $bar['cnt']; ?> <?php echo get_string('times', 'report_courseradar'); ?>">
+                    </div>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
+                <?php endif; ?>
               </div>
             </td>
           </tr>

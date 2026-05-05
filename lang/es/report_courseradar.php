@@ -77,3 +77,7 @@ $string['viewprofile']         = 'Ver perfil';
 
 
 $string['weeklyaggregated']    = 'Agrupado por semana (período > 90 días)';
+$string['moduletypesummary'] = 'Interacciones por tipo de recurso';
+$string['modules'] = 'Módulos';
+$string['avgviews'] = 'Media de vistas / módulo';
+$string['weeklyactivity'] = 'Actividad semanal';
