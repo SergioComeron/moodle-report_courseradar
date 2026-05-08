@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.2.0...v1.3.0) (2026-05-08)
+
+
+### Features
+
+* add at-risk messaging form and per-student completion progress ([a7410b8](https://github.com/SergioComeron/moodle-report_courseradar/commit/a7410b82e92a071f60fcbe32fdcae4ef55af0f09))
+* add engagement distribution chart, risk score column and weekly trend in student detail ([2ea9972](https://github.com/SergioComeron/moodle-report_courseradar/commit/2ea9972569a865df358737dc310b5fde926cf481))
+* add last course visit column to Student Engagement table ([0ce856d](https://github.com/SergioComeron/moodle-report_courseradar/commit/0ce856d0f1dd985b4895b67a5047eb6cfab5e97a))
+* add week-over-week trend indicators to KPI cards ([61afa00](https://github.com/SergioComeron/moodle-report_courseradar/commit/61afa00d8d61ce541f241e019981c29734205140))
+* persist UI state (tab, filters, show-hidden) in localStorage per course ([e5a0163](https://github.com/SergioComeron/moodle-report_courseradar/commit/e5a0163fc49779c54f2a0f9f811fe7f9a31a0db8))
+* reorganise report into tabs and add descriptive text to all sections ([0b2fce8](https://github.com/SergioComeron/moodle-report_courseradar/commit/0b2fce86680fedf84b7b00e914b046bc24d06976))
+
+
+### Bug Fixes
+
+* guard bootstrap.Tooltip call behind existence check ([6db569d](https://github.com/SergioComeron/moodle-report_courseradar/commit/6db569dbd22342898f9471077fdaff3baaa2dba7))
+* replace Bootstrap collapse with JS toggle for at-risk message form ([08f978c](https://github.com/SergioComeron/moodle-report_courseradar/commit/08f978ca89177833c6aeae8876c6455ec16eaefb))
+* tighten detail column layout and add green completion to legend ([60b437b](https://github.com/SergioComeron/moodle-report_courseradar/commit/60b437bdf5e0eec83dce342544d23d2e6c70dc07))
+* use natural-width columns in detail grid and correct string key ([51161c8](https://github.com/SergioComeron/moodle-report_courseradar/commit/51161c8f873d9c0cb8b6c15f8acffe31d7799986))
+
+
+### Code Refactor
+
+* compact icon-only grid for student detail activity view ([17bef94](https://github.com/SergioComeron/moodle-report_courseradar/commit/17bef944381e107007c106538443ad1d9ea3131e))
+
 ## [1.2.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.1.0...v1.2.0) (2026-05-05)
 
 
