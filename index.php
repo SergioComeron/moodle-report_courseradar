@@ -188,11 +188,12 @@ if ($totalstudents > 0 && $totalmodules > 0) {
 
 // Course-level visits per student (course home page views).
 $coursevisits      = []; // Keyed by userid: visit count.
+$lastcoursevisit   = []; // Keyed by userid: timestamp of last course view.
 $totalcoursevisits = 0;
 
 if ($totalstudents > 0) {
     [$cvinsql, $cvinparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'cv');
-    $cvsql = "SELECT userid, COUNT(*) AS visits
+    $cvsql = "SELECT userid, COUNT(*) AS visits, MAX(timecreated) AS lastcoursevisit
                 FROM {logstore_standard_log}
                WHERE courseid     = :courseid
                  AND action       = 'viewed'
@@ -207,7 +208,8 @@ if ($totalstudents > 0) {
         'dateto'   => $dateto,
     ], $cvinparams));
     foreach ($rs as $row) {
-        $coursevisits[$row->userid] = (int)$row->visits;
+        $coursevisits[$row->userid]     = (int)$row->visits;
+        $lastcoursevisit[$row->userid]  = (int)$row->lastcoursevisit;
         $totalcoursevisits += (int)$row->visits;
     }
     $rs->close();
@@ -1384,6 +1386,13 @@ function crSortStudents(th, isNumeric) {
             </th>
             <th class="cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('lastcoursevisit', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('lastcoursevisit_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
+            <th class="cr-th-sort" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('lastactivity', 'report_courseradar'); ?>
               <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('lastactivity_desc', 'report_courseradar'); ?>
@@ -1403,7 +1412,7 @@ function crSortStudents(th, isNumeric) {
 
 <?php if (empty($students)): ?>
           <tr>
-            <td colspan="8" class="text-center text-muted py-5">
+            <td colspan="9" class="text-center text-muted py-5">
               <?php echo get_string('nostudents', 'report_courseradar'); ?>
             </td>
           </tr>
@@ -1467,6 +1476,15 @@ function crSortStudents(th, isNumeric) {
               <?php echo $cvisits; ?>
             </td>
 
+            <?php $lastcv = $lastcoursevisit[$uid] ?? 0; ?>
+            <td data-sort="<?php echo $lastcv; ?>">
+              <small class="text-muted">
+                <?php echo $lastcv
+                    ? userdate($lastcv, get_string('strftimedatetimeshort', 'langconfig'))
+                    : get_string('never'); ?>
+              </small>
+            </td>
+
             <td data-sort="<?php echo $lastact; ?>">
               <small class="text-muted">
                 <?php echo $lastact
@@ -1506,7 +1524,7 @@ function crSortStudents(th, isNumeric) {
 
           <!-- Detalle del estudiante -->
           <tr id="<?php echo $studetailid; ?>" class="cr-detail-row" style="display:none;">
-            <td colspan="7">
+            <td colspan="8">
               <div class="cr-detail-inner p-3">
                 <?php foreach ($bysection as $snum => $section): ?>
                 <div class="mb-2">
