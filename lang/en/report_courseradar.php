@@ -82,14 +82,14 @@ $string['plugindesc']          = 'Track student interactions with course resourc
 $string['pluginname']          = 'Course Radar';
 
 $string['resetfilter']         = 'Reset';
-$string['riskscore']           = 'Score';
-$string['riskscore_desc']      = 'Engagement score (0–100)';
 $string['resetsort']           = 'Back to section view';
 $string['resource']            = 'Resource / Activity';
 $string['resourceactivity']    = 'Resources & Activities';
 $string['resourceactivity_desc'] = 'Coverage and interactions per resource, grouped by course section. Click a column header to sort.';
 $string['resourcesvisited']    = 'Resources visited';
 $string['resourcesvisited_desc'] = 'Different resources opened';
+$string['riskscore']           = 'Score';
+$string['riskscore_desc']      = 'Engagement score (0–100)';
 $string['searchstudent']       = 'Search student...';
 $string['sendmsg']             = 'Send message';
 $string['showhidden']          = 'Show hidden activities';
