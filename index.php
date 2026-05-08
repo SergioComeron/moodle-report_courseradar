@@ -582,8 +582,8 @@ foreach ($validcms as $cm) {
 
 // Number of resource table columns (varies when completion is enabled).
 $rescols = $hasanycompletion ? 8 : 7;
-// Number of student table columns (base 10 + 1 if completion tracking active).
-$stucols = $hasanycompletion ? 11 : 10;
+// Number of student table columns (base 9 + 1 if completion tracking active).
+$stucols = $hasanycompletion ? 10 : 9;
 
 // Output.
 echo $OUTPUT->header();
@@ -1731,7 +1731,6 @@ function crSortStudents(th, isNumeric) {
                 <?php echo get_string('riskscore_desc', 'report_courseradar'); ?>
               </small>
             </th>
-            <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
           </tr>
         </thead>
         <tbody>
@@ -1762,10 +1761,13 @@ function crSortStudents(th, isNumeric) {
         }
     }
   ?>
-          <tr class="cr-student-row" data-detail="<?php echo $studetailid; ?>">
+          <tr class="cr-student-row" style="cursor:pointer;"
+              data-detail="<?php echo $studetailid; ?>"
+              onclick="crToggle(this,'<?php echo $studetailid; ?>')">
 
             <td data-sort="<?php echo s($stu->lastname . ' ' . $stu->firstname); ?>">
-              <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>">
+              <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>"
+                 onclick="event.stopPropagation();">
                 <?php echo fullname($stu); ?>
               </a>
               <?php if ($isinactive): ?>
@@ -1859,18 +1861,11 @@ function crSortStudents(th, isNumeric) {
               <span class="badge <?php echo $rscoreclass; ?>"><?php echo $rscore; ?></span>
             </td>
 
-            <td class="text-center">
-              <button class="btn btn-sm btn-outline-secondary"
-                      type="button"
-                      onclick="crToggle(this,'<?php echo $studetailid; ?>')">
-                <?php echo $OUTPUT->pix_icon('i/search', '', 'core'); ?>
-              </button>
-            </td>
           </tr>
 
           <!-- Detalle del estudiante -->
           <tr id="<?php echo $studetailid; ?>" class="cr-detail-row" style="display:none;">
-            <td colspan="<?php echo $stucols - 1; ?>">
+            <td colspan="<?php echo $stucols; ?>">
               <div class="cr-detail-inner p-3">
                 <div class="d-flex gap-3 mb-3 flex-wrap">
                   <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#0d6efd22;border:1px solid #0d6efd55;flex-shrink:0;"></span><?php echo get_string('haveviewed', 'report_courseradar'); ?></small>
