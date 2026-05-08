@@ -82,18 +82,17 @@ $string['plugindesc']          = 'Seguimiento de las interacciones de los estudi
 $string['pluginname']          = 'Course Radar';
 
 $string['resetfilter']         = 'Restablecer';
-$string['riskscore']           = 'Puntuación';
-$string['riskscore_desc']      = 'Puntuación de participación (0–100)';
-$string['searchstudent']       = 'Buscar alumno...';
-$string['sendmsg']             = 'Enviar mensaje';
-$string['showhidden']          = 'Mostrar actividades ocultas';
-
 $string['resetsort']           = 'Volver a vista por secciones';
 $string['resource']            = 'Recurso / Actividad';
 $string['resourceactivity']    = 'Recursos y Actividades';
 $string['resourceactivity_desc'] = 'Cobertura e interacciones por recurso, agrupadas por sección del curso. Haz clic en una columna para ordenar.';
 $string['resourcesvisited']    = 'Recursos visitados';
 $string['resourcesvisited_desc'] = 'Recursos distintos abiertos';
+$string['riskscore']           = 'Puntuación';
+$string['riskscore_desc']      = 'Puntuación de participación (0–100)';
+$string['searchstudent']       = 'Buscar alumno...';
+$string['sendmsg']             = 'Enviar mensaje';
+$string['showhidden']          = 'Mostrar actividades ocultas';
 $string['sortby']              = 'Haz clic para ordenar';
 $string['student']             = 'Estudiante';
 $string['studentcoverage_desc'] = '% de recursos del curso visitados';
