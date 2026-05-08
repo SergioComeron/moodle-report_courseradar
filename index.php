@@ -37,6 +37,41 @@ $context = context_course::instance($courseid);
 require_login($course);
 require_capability('report/courseradar:view', $context);
 
+// Handle message-send action (POST from the at-risk form).
+if (optional_param('sendmsg', 0, PARAM_INT)) {
+    require_sesskey();
+    $msgtext = required_param('msgtext', PARAM_TEXT);
+    $uidlist = required_param('uids', PARAM_SEQUENCE);
+    $uidarr  = array_filter(array_map('intval', explode(',', $uidlist)));
+    $allstus = report_courseradar_get_students($context);
+    $sent    = 0;
+    foreach ($uidarr as $tuid) {
+        if (!isset($allstus[$tuid])) {
+            continue;
+        }
+        $msg = new \core\message\message();
+        $msg->component         = 'moodle';
+        $msg->name              = 'instantmessage';
+        $msg->userfrom          = $USER;
+        $msg->userto            = $allstus[$tuid];
+        $msg->subject           = format_string($course->shortname);
+        $msg->fullmessage       = $msgtext;
+        $msg->fullmessageformat = FORMAT_PLAIN;
+        $msg->fullmessagehtml   = '';
+        $msg->smallmessage      = '';
+        $msg->notification      = 0;
+        $msg->courseid          = $courseid;
+        message_send($msg);
+        $sent++;
+    }
+    redirect(
+        new moodle_url('/report/courseradar/index.php', ['id' => $courseid]),
+        get_string('msgsent', 'report_courseradar') . ' (' . $sent . ')',
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
+}
+
 // Date range.
 $defaultfrom = $course->startdate ?: mktime(0, 0, 0, 1, 1, (int)date('Y'));
 if (!$defaultfrom) {
@@ -188,11 +223,12 @@ if ($totalstudents > 0 && $totalmodules > 0) {
 
 // Course-level visits per student (course home page views).
 $coursevisits      = []; // Keyed by userid: visit count.
+$lastcoursevisit   = []; // Keyed by userid: timestamp of last course view.
 $totalcoursevisits = 0;
 
 if ($totalstudents > 0) {
     [$cvinsql, $cvinparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'cv');
-    $cvsql = "SELECT userid, COUNT(*) AS visits
+    $cvsql = "SELECT userid, COUNT(*) AS visits, MAX(timecreated) AS lastcoursevisit
                 FROM {logstore_standard_log}
                WHERE courseid     = :courseid
                  AND action       = 'viewed'
@@ -207,10 +243,67 @@ if ($totalstudents > 0) {
         'dateto'   => $dateto,
     ], $cvinparams));
     foreach ($rs as $row) {
-        $coursevisits[$row->userid] = (int)$row->visits;
+        $coursevisits[$row->userid]     = (int)$row->visits;
+        $lastcoursevisit[$row->userid]  = (int)$row->lastcoursevisit;
         $totalcoursevisits += (int)$row->visits;
     }
     $rs->close();
+}
+
+// Week-over-week comparison (current calendar week vs previous week, always absolute).
+$now           = time();
+$dow           = (int)date('N', $now); // 1=Mon … 7=Sun (ISO-8601).
+$curweekstart  = mktime(0, 0, 0, (int)date('n', $now), (int)date('j', $now) - ($dow - 1));
+$prevweekstart = $curweekstart - 604800;
+
+$wkcurinteractions  = 0;
+$wkprevinteractions = 0;
+$wkcurvisits        = 0;
+$wkprevvisits       = 0;
+
+if ($totalstudents > 0) {
+    if ($totalmodules > 0) {
+        [$wkinsql, $wkinparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'wka');
+        $wkrow = $DB->get_record_sql(
+            "SELECT COUNT(CASE WHEN timecreated >= :curstart  THEN 1 END) AS curwk,
+                    COUNT(CASE WHEN timecreated <  :curstart2 THEN 1 END) AS prevwk
+               FROM {logstore_standard_log}
+              WHERE courseid     = :courseid
+                AND action       = 'viewed'
+                AND contextlevel = :contextlevel
+                AND timecreated >= :prevstart
+                AND userid {$wkinsql}",
+            array_merge([
+                'courseid'     => $courseid,
+                'contextlevel' => CONTEXT_MODULE,
+                'curstart'     => $curweekstart,
+                'curstart2'    => $curweekstart,
+                'prevstart'    => $prevweekstart,
+            ], $wkinparams)
+        );
+        $wkcurinteractions = $wkrow ? (int)$wkrow->curwk : 0;
+        $wkprevinteractions = $wkrow ? (int)$wkrow->prevwk : 0;
+    }
+
+    [$wkinsql2, $wkinparams2] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'wkb');
+    $wkrow2 = $DB->get_record_sql(
+        "SELECT COUNT(CASE WHEN timecreated >= :curstart  THEN 1 END) AS curwk,
+                COUNT(CASE WHEN timecreated <  :curstart2 THEN 1 END) AS prevwk
+           FROM {logstore_standard_log}
+          WHERE courseid     = :courseid
+            AND action       = 'viewed'
+            AND target       = 'course'
+            AND timecreated >= :prevstart
+            AND userid {$wkinsql2}",
+        array_merge([
+            'courseid'  => $courseid,
+            'curstart'  => $curweekstart,
+            'curstart2' => $curweekstart,
+            'prevstart' => $prevweekstart,
+        ], $wkinparams2)
+    );
+    $wkcurvisits = $wkrow2 ? (int)$wkrow2->curwk : 0;
+    $wkprevvisits = $wkrow2 ? (int)$wkrow2->prevwk : 0;
 }
 
 // Pre-compute sparkline bars for every student.
@@ -269,6 +362,26 @@ if ($completionenabled) {
     }
 }
 
+// Per-student completion progress.
+$totaltracked   = 0;
+$completedbystu = [];
+if ($hasanycompletion) {
+    foreach ($validcms as $cm) {
+        if ($cm->completion > 0) {
+            $totaltracked++;
+        }
+    }
+    foreach ($students as $uid => $stu) {
+        $count = 0;
+        foreach ($validcms as $cmid => $cm) {
+            if ($cm->completion > 0 && isset($completionbyuser[$cmid][$uid])) {
+                $count++;
+            }
+        }
+        $completedbystu[$uid] = $count;
+    }
+}
+
 // Summary statistics.
 $totalinteractions = 0;
 $maxviews          = 0;
@@ -288,6 +401,21 @@ foreach ($validcms as $cmid => $cm) {
     }
 }
 $avgengagement = $engagements ? round(array_sum($engagements) / count($engagements)) : 0;
+
+// Engagement distribution: count students per quartile of resources visited.
+$engdist = [0 => 0, 25 => 0, 50 => 0, 75 => 0];
+foreach ($students as $uid => $stu) {
+    $pct = ($totalmodules > 0) ? round((count($studentlog[$uid] ?? []) / $totalmodules) * 100) : 0;
+    if ($pct < 25) {
+        $engdist[0]++;
+    } else if ($pct < 50) {
+        $engdist[25]++;
+    } else if ($pct < 75) {
+        $engdist[50]++;
+    } else {
+        $engdist[75]++;
+    }
+}
 
 // Aggregate interactions by module type.
 $bytype = [];
@@ -348,6 +476,21 @@ foreach ($students as $uid => $stu) {
         }
     }
     $daysinactive[$uid] = report_courseradar_days_inactive($lastact);
+}
+
+// Composite engagement score per student (0 = no activity, 100 = fully engaged).
+$riskscores = [];
+foreach ($students as $uid => $stu) {
+    $visited = count($studentlog[$uid] ?? []);
+    $visitpct = ($totalmodules > 0) ? ($visited / $totalmodules) * 100 : 0;
+    $days = $daysinactive[$uid];
+    $recpct = ($days < 0) ? 0.0 : max(0.0, 100.0 - ($days * 100.0 / 30.0));
+    if ($hasanycompletion && $totaltracked > 0) {
+        $complpct = (($completedbystu[$uid] ?? 0) / $totaltracked) * 100;
+        $riskscores[$uid] = min(100, (int)round($visitpct * 0.35 + $recpct * 0.35 + $complpct * 0.30));
+    } else {
+        $riskscores[$uid] = min(100, (int)round($visitpct * 0.50 + $recpct * 0.50));
+    }
 }
 
 // Activity chart data.
@@ -439,6 +582,8 @@ foreach ($validcms as $cm) {
 
 // Number of resource table columns (varies when completion is enabled).
 $rescols = $hasanycompletion ? 8 : 7;
+// Number of student table columns (base 9 + 1 if completion tracking active).
+$stucols = $hasanycompletion ? 10 : 9;
 
 // Output.
 echo $OUTPUT->header();
@@ -464,6 +609,11 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .btn.cr-btn-active    { background-color: #0d6efd; color: #fff; }
 .cr-badge-mod         { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; }
 .cr-student-badge     { font-size: .75rem; cursor: default; }
+.cr-act-icon          { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:5px; position:relative; cursor:default; flex-shrink:0; }
+.cr-act-icon img      { width:15px; height:15px; }
+.cr-act-icon .cr-act-cnt { position:absolute; top:-4px; right:-4px; font-size:9px; font-weight:700; line-height:1; padding:1px 3px; border-radius:3px; background:#0d6efd; color:#fff; }
+.cr-act-icon.cr-act-done .cr-act-cnt { background:#198754; }
+.cr-act-grid          { display:flex; flex-wrap:wrap; gap:3px; }
 .cr-zero              { color: #adb5bd; }
 /* Alumnos en riesgo */
 .cr-risk-card         { border-left: 4px solid #dc3545 !important; }
@@ -488,12 +638,78 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-type-filter-btn   { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; transition: all .15s; }
 </style>
 <script>
-/* ── Inicializar tooltips Bootstrap ───────────────────────────────────────── */
-document.addEventListener('DOMContentLoaded', function() {
-    crApplyFilters();
-    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
-        new bootstrap.Tooltip(el);
+/* ── Estado persistente (localStorage por curso) ───────────────────────────── */
+var crStateKey      = 'cr_state_<?php echo (int)$courseid; ?>';
+var crStateLoading  = false;
+
+function crSaveState() {
+    if (crStateLoading) { return; }
+    var hiddenTypes = [];
+    document.querySelectorAll('.cr-type-filter-btn').forEach(function(b) {
+        if (!b.classList.contains('cr-type-active')) { hiddenTypes.push(b.dataset.modname); }
     });
+    var hiddenTopUnseen = [];
+    document.querySelectorAll('.cr-topunseen-filter-btn').forEach(function(b) {
+        if (!b.classList.contains('cr-type-active')) { hiddenTopUnseen.push(b.dataset.modname); }
+    });
+    var cb  = document.getElementById('cr-show-hidden');
+    var tab = document.querySelector('.cr-tab-btn.active');
+    try {
+        localStorage.setItem(crStateKey, JSON.stringify({
+            tab:             tab ? tab.dataset.tab : 'cr-tab-overview',
+            hiddenTypes:     hiddenTypes,
+            showHidden:      cb ? cb.checked : false,
+            hiddenTopUnseen: hiddenTopUnseen
+        }));
+    } catch (e) {}
+}
+
+function crLoadState() {
+    var state;
+    try { state = JSON.parse(localStorage.getItem(crStateKey) || '{}'); } catch (e) { state = {}; }
+    crStateLoading = true;
+
+    if (state.tab) { crShowTab(state.tab); }
+
+    if (state.hiddenTypes && state.hiddenTypes.length) {
+        document.querySelectorAll('.cr-type-filter-btn').forEach(function(b) {
+            if (state.hiddenTypes.indexOf(b.dataset.modname) >= 0) {
+                b.classList.remove('cr-type-active', 'btn-primary');
+                b.classList.add('btn-outline-secondary');
+            }
+        });
+    }
+
+    var cb = document.getElementById('cr-show-hidden');
+    if (cb && state.showHidden !== undefined) { cb.checked = state.showHidden; }
+
+    if (state.hiddenTopUnseen && state.hiddenTopUnseen.length) {
+        document.querySelectorAll('.cr-topunseen-filter-btn').forEach(function(b) {
+            if (state.hiddenTopUnseen.indexOf(b.dataset.modname) >= 0) {
+                b.classList.remove('cr-type-active', 'btn-warning');
+                b.classList.add('btn-outline-secondary');
+            }
+        });
+        var tbody = document.querySelector('#cr-topunseen-table tbody');
+        if (tbody) {
+            tbody.querySelectorAll('tr[data-modname]').forEach(function(row) {
+                row.style.display = state.hiddenTopUnseen.indexOf(row.dataset.modname) >= 0 ? 'none' : '';
+            });
+        }
+    }
+
+    crApplyFilters();
+    crStateLoading = false;
+}
+
+/* ── Inicializar ─────────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', function() {
+    crLoadState();
+    if (typeof bootstrap !== 'undefined') {
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+            new bootstrap.Tooltip(el);
+        });
+    }
 });
 
 /* ── Toggle fila de detalle ────────────────────────────────────────────────── */
@@ -507,6 +723,21 @@ function crToggle(btn, rowId) {
         row.style.display = 'table-row';
         btn.classList.add('cr-btn-active');
     }
+}
+
+function crToggleDiv(id) {
+    var el = document.getElementById(id);
+    if (!el) { return; }
+    el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+/* ── Pestañas principales ──────────────────────────────────────────────────── */
+function crShowTab(tabId) {
+    document.querySelectorAll('.cr-tab-panel').forEach(function(p) { p.style.display = 'none'; });
+    document.querySelectorAll('.cr-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.getElementById(tabId).style.display = '';
+    document.querySelector('[data-tab="' + tabId + '"]').classList.add('active');
+    crSaveState();
 }
 
 /* ── Ordenar tabla de recursos ─────────────────────────────────────────────── */
@@ -565,6 +796,7 @@ function crFilterTopUnseen(btn, modname) {
     tbody.querySelectorAll('tr[data-modname]').forEach(function(row) {
         row.style.display = hiddenTypes.indexOf(row.dataset.modname) >= 0 ? 'none' : '';
     });
+    crSaveState();
 }
 
 /* ── Buscador de estudiantes ───────────────────────────────────────────────── */
@@ -627,9 +859,10 @@ function crFilterType(btn) {
         btn.classList.add('cr-type-active', 'btn-primary');
     }
     crApplyFilters();
+    crSaveState();
 }
 
-function crToggleHidden() { crApplyFilters(); }
+function crToggleHidden() { crApplyFilters(); crSaveState(); }
 
 /* ── Ordenar tabla de estudiantes ──────────────────────────────────────────── */
 function crSortStudents(th, isNumeric) {
@@ -712,6 +945,32 @@ function crSortStudents(th, isNumeric) {
   </div>
 </div>
 
+<!-- ── Navegación por pestañas ──────────────────────────────────────────── -->
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item">
+    <button class="nav-link active cr-tab-btn" data-tab="cr-tab-overview"
+            onclick="crShowTab('cr-tab-overview')">
+      <?php echo $OUTPUT->pix_icon('i/dashboard', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('tab_overview', 'report_courseradar'); ?>
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link cr-tab-btn" data-tab="cr-tab-resources"
+            onclick="crShowTab('cr-tab-resources')">
+      <?php echo $OUTPUT->pix_icon('i/course', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('tab_resources', 'report_courseradar'); ?>
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link cr-tab-btn" data-tab="cr-tab-students"
+            onclick="crShowTab('cr-tab-students')">
+      <?php echo $OUTPUT->pix_icon('i/group', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('tab_students', 'report_courseradar'); ?>
+    </button>
+  </li>
+</ul>
+
+<div id="cr-tab-overview" class="cr-tab-panel">
 <!-- ── Tarjetas de resumen ───────────────────────────────────────────────── -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-lg">
@@ -727,6 +986,22 @@ function crSortStudents(th, isNumeric) {
       <div class="card-body">
         <div class="cr-stat text-success"><?php echo number_format($totalinteractions); ?></div>
         <div class="cr-stat-label"><?php echo get_string('totalinteractions', 'report_courseradar'); ?></div>
+        <?php if ($totalstudents > 0 && $totalmodules > 0):
+          if ($wkprevinteractions === 0 && $wkcurinteractions === 0):
+            $wkiicon = '—'; $wkiclass = 'text-muted'; $wkipct = '';
+          elseif ($wkprevinteractions === 0):
+            $wkiicon = '↑'; $wkiclass = 'text-success'; $wkipct = '+100%';
+          else:
+            $wkipct_n = round((($wkcurinteractions - $wkprevinteractions) / $wkprevinteractions) * 100);
+            $wkiicon  = $wkipct_n > 0 ? '↑' : ($wkipct_n < 0 ? '↓' : '→');
+            $wkiclass = $wkipct_n > 0 ? 'text-success' : ($wkipct_n < 0 ? 'text-danger' : 'text-muted');
+            $wkipct   = $wkipct_n > 0 ? '+' . $wkipct_n . '%' : $wkipct_n . '%';
+          endif; ?>
+        <div class="mt-1">
+          <small class="<?php echo $wkiclass; ?> fw-semibold"><?php echo $wkiicon; ?> <?php echo $wkipct; ?></small>
+          <small class="text-muted ms-1"><?php echo get_string('weekvspreview', 'report_courseradar'); ?></small>
+        </div>
+        <?php endif; ?>
       </div>
     </div>
   </div>
@@ -735,6 +1010,22 @@ function crSortStudents(th, isNumeric) {
       <div class="card-body">
         <div class="cr-stat text-secondary"><?php echo number_format($totalcoursevisits); ?></div>
         <div class="cr-stat-label"><?php echo get_string('coursevisits', 'report_courseradar'); ?></div>
+        <?php if ($totalstudents > 0):
+          if ($wkprevvisits === 0 && $wkcurvisits === 0):
+            $wkvicon = '—'; $wkvclass = 'text-muted'; $wkvpct = '';
+          elseif ($wkprevvisits === 0):
+            $wkvicon = '↑'; $wkvclass = 'text-success'; $wkvpct = '+100%';
+          else:
+            $wkvpct_n = round((($wkcurvisits - $wkprevvisits) / $wkprevvisits) * 100);
+            $wkvicon  = $wkvpct_n > 0 ? '↑' : ($wkvpct_n < 0 ? '↓' : '→');
+            $wkvclass = $wkvpct_n > 0 ? 'text-success' : ($wkvpct_n < 0 ? 'text-danger' : 'text-muted');
+            $wkvpct   = $wkvpct_n > 0 ? '+' . $wkvpct_n . '%' : $wkvpct_n . '%';
+          endif; ?>
+        <div class="mt-1">
+          <small class="<?php echo $wkvclass; ?> fw-semibold"><?php echo $wkvicon; ?> <?php echo $wkvpct; ?></small>
+          <small class="text-muted ms-1"><?php echo get_string('weekvspreview', 'report_courseradar'); ?></small>
+        </div>
+        <?php endif; ?>
       </div>
     </div>
   </div>
@@ -820,6 +1111,81 @@ function crSortStudents(th, isNumeric) {
       <?php endif; ?>
 
     </div>
+
+    <!-- Formulario de mensaje a alumnos en riesgo -->
+    <div class="mt-3 pt-3 border-top">
+      <button class="btn btn-sm btn-outline-danger"
+              type="button"
+              onclick="crToggleDiv('cr-risk-msgform')">
+        <?php echo $OUTPUT->pix_icon('t/message', '', 'core', ['class' => 'me-1']); ?>
+        <?php echo get_string('notifyrisk', 'report_courseradar'); ?>
+        <span class="badge bg-danger text-white ms-1"><?php echo $totalrisk; ?></span>
+      </button>
+      <div class="mt-3" id="cr-risk-msgform" style="display:none;">
+        <form method="post"
+              action="<?php echo (new moodle_url('/report/courseradar/index.php', ['id' => $courseid]))->out(false); ?>">
+          <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+          <input type="hidden" name="sendmsg" value="1">
+          <input type="hidden" name="uids"
+                 value="<?php echo s(implode(',', array_merge(array_keys($atrisknone), array_keys($atrisklow)))); ?>">
+          <textarea class="form-control form-control-sm mb-2" name="msgtext" rows="3"
+                    placeholder="<?php echo get_string('notifyrisk_placeholder', 'report_courseradar'); ?>"
+                    required></textarea>
+          <button type="submit" class="btn btn-sm btn-danger">
+            <?php echo $OUTPUT->pix_icon('t/message', '', 'core', ['class' => 'me-1']); ?>
+            <?php echo get_string('sendmsg', 'report_courseradar'); ?>
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+</div>
+<?php endif; ?>
+
+<!-- ── Distribución de engagement ───────────────────────────────────────── -->
+<?php if ($totalstudents > 0 && $totalmodules > 0): ?>
+<div class="card cr-card mb-4">
+  <div class="card-header bg-white border-bottom py-3">
+    <h5 class="mb-0 fw-bold">
+      <?php echo $OUTPUT->pix_icon('i/stats', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('engdistribution', 'report_courseradar'); ?>
+    </h5>
+    <small class="text-muted"><?php echo get_string('engdistribution_desc', 'report_courseradar'); ?></small>
+  </div>
+  <div class="card-body">
+    <?php
+      $engbuckets = [
+          ['label' => '75–100%', 'count' => $engdist[75], 'class' => 'bg-success'],
+          ['label' => '50–74%',  'count' => $engdist[50],  'class' => 'bg-info'],
+          ['label' => '25–49%',  'count' => $engdist[25],  'class' => 'bg-warning'],
+          ['label' => '0–24%',   'count' => $engdist[0],   'class' => 'bg-danger'],
+      ];
+    ?>
+    <?php foreach ($engbuckets as $bucket): ?>
+    <div class="d-flex align-items-center mb-2 gap-2">
+      <div style="width:4.5rem;" class="text-end">
+        <small class="text-muted fw-semibold"><?php echo $bucket['label']; ?></small>
+      </div>
+      <div class="flex-grow-1">
+        <?php $bpct = ($totalstudents > 0) ? round(($bucket['count'] / $totalstudents) * 100) : 0; ?>
+        <div class="progress" style="height:18px;">
+          <div class="progress-bar <?php echo $bucket['class']; ?>"
+               role="progressbar"
+               style="width:<?php echo $bpct; ?>%"
+               aria-valuenow="<?php echo $bpct; ?>"
+               aria-valuemin="0" aria-valuemax="100">
+            <?php if ($bpct >= 10): ?><?php echo $bucket['count']; ?><?php endif; ?>
+          </div>
+        </div>
+      </div>
+      <div style="width:2.5rem;">
+        <small class="<?php echo $bucket['count'] === 0 ? 'text-muted' : 'fw-semibold'; ?>">
+          <?php echo $bucket['count']; ?>
+        </small>
+      </div>
+    </div>
+    <?php endforeach; ?>
   </div>
 </div>
 <?php endif; ?>
@@ -923,6 +1289,7 @@ function crSortStudents(th, isNumeric) {
             </small>
           <?php endif; ?>
         </h5>
+        <small class="text-muted"><?php echo get_string('activityovertime_desc', 'report_courseradar'); ?></small>
       </div>
       <div class="card-body">
         <?php echo $OUTPUT->render($chartobj); ?>
@@ -938,6 +1305,7 @@ function crSortStudents(th, isNumeric) {
         <h5 class="mb-0 fw-bold">
           <?php echo get_string('activitypattern', 'report_courseradar'); ?>
         </h5>
+        <small class="text-muted"><?php echo get_string('activitypattern_desc', 'report_courseradar'); ?></small>
       </div>
       <div class="card-body p-3 overflow-auto">
         <table class="cr-heatmap">
@@ -978,6 +1346,9 @@ function crSortStudents(th, isNumeric) {
 </div>
 <?php endif; ?>
 
+</div><!-- /cr-tab-overview -->
+
+<div id="cr-tab-resources" class="cr-tab-panel" style="display:none;">
 <!-- ── Resumen por tipo de módulo ──────────────────────────────────────────-->
 <?php if (!empty($bytype)): ?>
 <div class="card cr-card mb-4">
@@ -986,6 +1357,7 @@ function crSortStudents(th, isNumeric) {
       <?php echo $OUTPUT->pix_icon('i/stats', '', 'core', ['class' => 'me-1']); ?>
       <?php echo get_string('moduletypesummary', 'report_courseradar'); ?>
     </h5>
+    <small class="text-muted"><?php echo get_string('moduletypesummary_desc', 'report_courseradar'); ?></small>
   </div>
   <div class="card-body">
     <?php foreach ($bytype as $mod => $data): ?>
@@ -1022,11 +1394,14 @@ function crSortStudents(th, isNumeric) {
 <!-- ── Tabla de recursos por sección ──────────────────────────────────────-->
 <div class="card cr-card mb-4">
   <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
-    <h5 class="mb-0 fw-bold">
-      <?php echo $OUTPUT->pix_icon('i/course', '', 'core', ['class' => 'me-1']); ?>
-      <?php echo get_string('resourceactivity', 'report_courseradar'); ?>
-      <span class="badge bg-secondary ms-2"><?php echo $totalmodules; ?></span>
-    </h5>
+    <div>
+      <h5 class="mb-0 fw-bold">
+        <?php echo $OUTPUT->pix_icon('i/course', '', 'core', ['class' => 'me-1']); ?>
+        <?php echo get_string('resourceactivity', 'report_courseradar'); ?>
+        <span class="badge bg-secondary ms-2"><?php echo $totalmodules; ?></span>
+      </h5>
+      <small class="text-muted"><?php echo get_string('resourceactivity_desc', 'report_courseradar'); ?></small>
+    </div>
     <div class="d-flex align-items-center gap-3">
       <?php if ($hashidden): ?>
       <div class="form-check form-switch mb-0">
@@ -1329,6 +1704,9 @@ function crSortStudents(th, isNumeric) {
   </div>
 </div><!-- /card recursos -->
 
+</div><!-- /cr-tab-resources -->
+
+<div id="cr-tab-students" class="cr-tab-panel" style="display:none;">
 <!-- ── Tabla de actividad por estudiante ─────────────────────────────────── -->
 <div class="card cr-card mb-4">
   <div class="card-header bg-white border-bottom py-3">
@@ -1337,6 +1715,7 @@ function crSortStudents(th, isNumeric) {
       <?php echo get_string('studentengagement', 'report_courseradar'); ?>
       <span class="badge bg-secondary ms-2"><?php echo $totalstudents; ?></span>
     </h5>
+    <small class="text-muted"><?php echo get_string('studentengagement_desc', 'report_courseradar'); ?></small>
   </div>
   <?php if ($totalstudents > 5): ?>
   <div class="px-3 pt-3 pb-2 border-bottom">
@@ -1384,6 +1763,13 @@ function crSortStudents(th, isNumeric) {
             </th>
             <th class="cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('lastcoursevisit', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('lastcoursevisit_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
+            <th class="cr-th-sort" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('lastactivity', 'report_courseradar'); ?>
               <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('lastactivity_desc', 'report_courseradar'); ?>
@@ -1396,14 +1782,29 @@ function crSortStudents(th, isNumeric) {
                 <?php echo get_string('daysinactive_desc', 'report_courseradar'); ?>
               </small>
             </th>
-            <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
+            <?php if ($hasanycompletion): ?>
+            <th class="cr-th-sort text-center" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('completionstu', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('completionstu_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
+            <?php endif; ?>
+            <th class="cr-th-sort text-center" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('riskscore', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('riskscore_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
           </tr>
         </thead>
         <tbody>
 
 <?php if (empty($students)): ?>
           <tr>
-            <td colspan="8" class="text-center text-muted py-5">
+            <td colspan="<?php echo $stucols; ?>" class="text-center text-muted py-5">
               <?php echo get_string('nostudents', 'report_courseradar'); ?>
             </td>
           </tr>
@@ -1427,10 +1828,13 @@ function crSortStudents(th, isNumeric) {
         }
     }
   ?>
-          <tr class="cr-student-row" data-detail="<?php echo $studetailid; ?>">
+          <tr class="cr-student-row" style="cursor:pointer;"
+              data-detail="<?php echo $studetailid; ?>"
+              onclick="crToggle(this,'<?php echo $studetailid; ?>')">
 
             <td data-sort="<?php echo s($stu->lastname . ' ' . $stu->firstname); ?>">
-              <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>">
+              <a href="<?php echo (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false); ?>"
+                 onclick="event.stopPropagation();">
                 <?php echo fullname($stu); ?>
               </a>
               <?php if ($isinactive): ?>
@@ -1467,6 +1871,15 @@ function crSortStudents(th, isNumeric) {
               <?php echo $cvisits; ?>
             </td>
 
+            <?php $lastcv = $lastcoursevisit[$uid] ?? 0; ?>
+            <td data-sort="<?php echo $lastcv; ?>">
+              <small class="text-muted">
+                <?php echo $lastcv
+                    ? userdate($lastcv, get_string('strftimedatetimeshort', 'langconfig'))
+                    : get_string('never'); ?>
+              </small>
+            </td>
+
             <td data-sort="<?php echo $lastact; ?>">
               <small class="text-muted">
                 <?php echo $lastact
@@ -1495,62 +1908,118 @@ function crSortStudents(th, isNumeric) {
               <?php endif; ?>
             </td>
 
-            <td class="text-center">
-              <button class="btn btn-sm btn-outline-secondary"
-                      type="button"
-                      onclick="crToggle(this,'<?php echo $studetailid; ?>')">
-                <?php echo $OUTPUT->pix_icon('i/search', '', 'core'); ?>
-              </button>
+            <?php if ($hasanycompletion):
+              $stucomp = $completedbystu[$uid] ?? 0;
+              $compclass = ($totaltracked > 0 && $stucomp === $totaltracked)
+                  ? 'text-success'
+                  : ($stucomp > 0 ? 'text-warning' : 'cr-zero');
+            ?>
+            <td class="text-center fw-semibold <?php echo $compclass; ?>"
+                data-sort="<?php echo $stucomp; ?>">
+              <?php echo $stucomp; ?>/<?php echo $totaltracked; ?>
             </td>
+            <?php endif; ?>
+
+            <?php
+              $rscore = $riskscores[$uid];
+              $rscoreclass = $rscore >= 75 ? 'bg-success' : ($rscore >= 50 ? 'bg-warning text-dark' : 'bg-danger');
+            ?>
+            <td class="text-center" data-sort="<?php echo $rscore; ?>">
+              <span class="badge <?php echo $rscoreclass; ?>"><?php echo $rscore; ?></span>
+            </td>
+
           </tr>
 
           <!-- Detalle del estudiante -->
           <tr id="<?php echo $studetailid; ?>" class="cr-detail-row" style="display:none;">
-            <td colspan="7">
+            <td colspan="<?php echo $stucols; ?>">
               <div class="cr-detail-inner p-3">
+                <div class="d-flex gap-3 mb-3 flex-wrap">
+                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#0d6efd22;border:1px solid #0d6efd55;flex-shrink:0;"></span><?php echo get_string('haveviewed', 'report_courseradar'); ?></small>
+                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#19875422;border:1px solid #19875455;flex-shrink:0;"></span><?php echo get_string('completion', 'report_courseradar'); ?></small>
+                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#f0f2f5;border:1px solid #dee2e6;flex-shrink:0;"></span><?php echo get_string('haventviewed', 'report_courseradar'); ?></small>
+                </div>
                 <?php foreach ($bysection as $snum => $section): ?>
-                <div class="mb-2">
+                <?php
+                  $secvisited = [];
+                  $secunseen  = [];
+                  foreach ($section['cms'] as $cm) {
+                      $cmid = $cm->id;
+                      if (isset($studentlog[$uid][$cmid])) {
+                          $secvisited[] = $cm;
+                      } else {
+                          $secunseen[] = $cm;
+                      }
+                  }
+                ?>
+                <div class="mb-3">
                   <small class="text-muted fw-semibold d-block mb-1"><?php echo $section['name']; ?></small>
-                  <div class="d-flex flex-wrap gap-1">
-                    <?php foreach ($section['cms'] as $cm): ?>
-                    <?php
-                      $cmid    = $cm->id;
-                      $seen    = isset($studentlog[$uid][$cmid]);
-                      $svcount = $seen ? $studentlog[$uid][$cmid] : 0;
-                      $completed_stu = $completionenabled && $cm->completion > 0
-                                    && isset($completionbyuser[$cmid][$uid]);
-                      $badgeclass = $completed_stu
-                          ? 'bg-success'
-                          : ($seen ? 'bg-primary' : 'bg-light text-dark border');
-                      $iconurl = $cm->get_icon_url()->out(false);
-                      $title = s(format_string($cm->name));
-                      if ($seen)        { $title .= ' (' . $svcount . ' ' . get_string('times', 'report_courseradar') . ')'; }
-                      if ($completed_stu) { $title .= ' ✓'; }
-                    ?>
-                    <span class="badge <?php echo $badgeclass; ?> cr-student-badge d-flex align-items-center gap-1"
-                          title="<?php echo $title; ?>">
-                      <img src="<?php echo $iconurl; ?>" alt="" style="width:13px;height:13px;">
-                      <?php echo shorten_text(format_string($cm->name), 22); ?>
-                      <?php if ($seen && $svcount > 1): ?>
-                        <span class="opacity-75">(<?php echo $svcount; ?>)</span>
+                  <div class="d-flex align-items-start">
+                    <div class="cr-act-grid me-2 pe-2 border-end">
+                      <?php foreach ($secvisited as $cm): ?>
+                      <?php
+                        $cmid = $cm->id;
+                        $svcount = $studentlog[$uid][$cmid] ?? 0;
+                        $completed_stu = $completionenabled && $cm->completion > 0
+                            && isset($completionbyuser[$cmid][$uid]);
+                        $bgcol = $completed_stu ? '#198754' : '#0d6efd';
+                        $title = s(format_string($cm->name)) . ' (' . $svcount . ' ' . get_string('times', 'report_courseradar') . ')';
+                        if ($completed_stu) { $title .= ' ✓'; }
+                      ?>
+                      <span class="cr-act-icon <?php echo $completed_stu ? 'cr-act-done' : ''; ?>"
+                            style="background:<?php echo $bgcol; ?>22;border:1px solid <?php echo $bgcol; ?>55;"
+                            title="<?php echo $title; ?>">
+                        <img src="<?php echo $cm->get_icon_url()->out(false); ?>" alt="">
+                        <?php if ($svcount > 1): ?>
+                        <span class="cr-act-cnt <?php echo $completed_stu ? 'bg-success' : ''; ?>"><?php echo $svcount; ?></span>
+                        <?php endif; ?>
+                      </span>
+                      <?php endforeach; ?>
+                      <?php if (empty($secvisited)): ?>
+                        <small class="text-muted fst-italic"><?php echo get_string('noviewsyet', 'report_courseradar'); ?></small>
                       <?php endif; ?>
-                      <?php if ($completed_stu): ?><span>✓</span><?php endif; ?>
-                    </span>
-                    <?php endforeach; ?>
+                    </div>
+                    <?php if (!empty($secunseen)): ?>
+                    <div class="cr-act-grid ps-2">
+                      <?php foreach ($secunseen as $cm): ?>
+                      <span class="cr-act-icon"
+                            style="background:#f0f2f5;border:1px solid #dee2e6;"
+                            title="<?php echo s(format_string($cm->name)); ?>">
+                        <img src="<?php echo $cm->get_icon_url()->out(false); ?>" alt="" style="opacity:.4;">
+                      </span>
+                      <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
                   </div>
                 </div>
                 <?php endforeach; ?>
                 <?php if (!empty($sparklines[$uid])): ?>
+                <?php
+                  $spbars  = $sparklines[$uid];
+                  $spcount = count($spbars);
+                  $splast  = $spbars[$spcount - 1]['cnt'];
+                  $spprev  = $spcount > 1 ? $spbars[$spcount - 2]['cnt'] : 0;
+                  if ($spprev === 0 && $splast === 0):
+                    $spicon = '—'; $spclass = 'text-muted'; $sppctstr = '';
+                  elseif ($spprev === 0):
+                    $spicon = '↑'; $spclass = 'text-success'; $sppctstr = '+100%';
+                  else:
+                    $sppct_n = round((($splast - $spprev) / $spprev) * 100);
+                    $spicon  = $sppct_n > 0 ? '↑' : ($sppct_n < 0 ? '↓' : '→');
+                    $spclass = $sppct_n > 0 ? 'text-success' : ($sppct_n < 0 ? 'text-danger' : 'text-muted');
+                    $sppctstr = $sppct_n > 0 ? '+' . $sppct_n . '%' : $sppct_n . '%';
+                  endif;
+                ?>
                 <div class="mt-3">
                   <small class="text-muted fw-semibold d-block mb-1">
                     <?php echo get_string('weeklyactivity', 'report_courseradar'); ?>
+                    <span class="<?php echo $spclass; ?> ms-2"><?php echo $spicon; ?> <?php echo $sppctstr; ?></span>
+                    <span class="text-muted ms-1"><?php echo get_string('weekvspreview', 'report_courseradar'); ?></span>
                   </small>
                   <div class="cr-sparkline">
-                    <?php foreach ($sparklines[$uid] as $bar): ?>
+                    <?php foreach ($spbars as $bar): ?>
                     <div class="cr-spark-bar"
                          style="height:<?php echo $bar['height']; ?>%"
-                         data-bs-toggle="tooltip"
-                         data-bs-placement="top"
                          title="<?php echo s($bar['label']); ?>: <?php echo $bar['cnt']; ?> <?php echo get_string('times', 'report_courseradar'); ?>">
                     </div>
                     <?php endforeach; ?>
@@ -1569,6 +2038,7 @@ function crSortStudents(th, isNumeric) {
     </div>
   </div>
 </div><!-- /card estudiantes -->
+</div><!-- /cr-tab-students -->
 
 </div><!-- /container -->
 <?php echo $OUTPUT->footer(); ?>
