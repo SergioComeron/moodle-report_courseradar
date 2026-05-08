@@ -638,9 +638,73 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-type-filter-btn   { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; transition: all .15s; }
 </style>
 <script>
-/* ── Inicializar tooltips Bootstrap ───────────────────────────────────────── */
-document.addEventListener('DOMContentLoaded', function() {
+/* ── Estado persistente (localStorage por curso) ───────────────────────────── */
+var crStateKey      = 'cr_state_<?php echo (int)$courseid; ?>';
+var crStateLoading  = false;
+
+function crSaveState() {
+    if (crStateLoading) { return; }
+    var hiddenTypes = [];
+    document.querySelectorAll('.cr-type-filter-btn').forEach(function(b) {
+        if (!b.classList.contains('cr-type-active')) { hiddenTypes.push(b.dataset.modname); }
+    });
+    var hiddenTopUnseen = [];
+    document.querySelectorAll('.cr-topunseen-filter-btn').forEach(function(b) {
+        if (!b.classList.contains('cr-type-active')) { hiddenTopUnseen.push(b.dataset.modname); }
+    });
+    var cb  = document.getElementById('cr-show-hidden');
+    var tab = document.querySelector('.cr-tab-btn.active');
+    try {
+        localStorage.setItem(crStateKey, JSON.stringify({
+            tab:             tab ? tab.dataset.tab : 'cr-tab-overview',
+            hiddenTypes:     hiddenTypes,
+            showHidden:      cb ? cb.checked : false,
+            hiddenTopUnseen: hiddenTopUnseen
+        }));
+    } catch (e) {}
+}
+
+function crLoadState() {
+    var state;
+    try { state = JSON.parse(localStorage.getItem(crStateKey) || '{}'); } catch (e) { state = {}; }
+    crStateLoading = true;
+
+    if (state.tab) { crShowTab(state.tab); }
+
+    if (state.hiddenTypes && state.hiddenTypes.length) {
+        document.querySelectorAll('.cr-type-filter-btn').forEach(function(b) {
+            if (state.hiddenTypes.indexOf(b.dataset.modname) >= 0) {
+                b.classList.remove('cr-type-active', 'btn-primary');
+                b.classList.add('btn-outline-secondary');
+            }
+        });
+    }
+
+    var cb = document.getElementById('cr-show-hidden');
+    if (cb && state.showHidden !== undefined) { cb.checked = state.showHidden; }
+
+    if (state.hiddenTopUnseen && state.hiddenTopUnseen.length) {
+        document.querySelectorAll('.cr-topunseen-filter-btn').forEach(function(b) {
+            if (state.hiddenTopUnseen.indexOf(b.dataset.modname) >= 0) {
+                b.classList.remove('cr-type-active', 'btn-warning');
+                b.classList.add('btn-outline-secondary');
+            }
+        });
+        var tbody = document.querySelector('#cr-topunseen-table tbody');
+        if (tbody) {
+            tbody.querySelectorAll('tr[data-modname]').forEach(function(row) {
+                row.style.display = state.hiddenTopUnseen.indexOf(row.dataset.modname) >= 0 ? 'none' : '';
+            });
+        }
+    }
+
     crApplyFilters();
+    crStateLoading = false;
+}
+
+/* ── Inicializar ─────────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', function() {
+    crLoadState();
     if (typeof bootstrap !== 'undefined') {
         document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
             new bootstrap.Tooltip(el);
@@ -673,6 +737,7 @@ function crShowTab(tabId) {
     document.querySelectorAll('.cr-tab-btn').forEach(function(b) { b.classList.remove('active'); });
     document.getElementById(tabId).style.display = '';
     document.querySelector('[data-tab="' + tabId + '"]').classList.add('active');
+    crSaveState();
 }
 
 /* ── Ordenar tabla de recursos ─────────────────────────────────────────────── */
@@ -731,6 +796,7 @@ function crFilterTopUnseen(btn, modname) {
     tbody.querySelectorAll('tr[data-modname]').forEach(function(row) {
         row.style.display = hiddenTypes.indexOf(row.dataset.modname) >= 0 ? 'none' : '';
     });
+    crSaveState();
 }
 
 /* ── Buscador de estudiantes ───────────────────────────────────────────────── */
@@ -793,9 +859,10 @@ function crFilterType(btn) {
         btn.classList.add('cr-type-active', 'btn-primary');
     }
     crApplyFilters();
+    crSaveState();
 }
 
-function crToggleHidden() { crApplyFilters(); }
+function crToggleHidden() { crApplyFilters(); crSaveState(); }
 
 /* ── Ordenar tabla de estudiantes ──────────────────────────────────────────── */
 function crSortStudents(th, isNumeric) {
