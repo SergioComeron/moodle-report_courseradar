@@ -50,6 +50,7 @@ $string['dateto']              = 'Hasta';
 $string['daysinactive']    = 'Días sin actividad';
 $string['daysinactive_desc']   = 'Días desde la última interacción';
 $string['details']             = 'Detalle';
+$string['engdistribution']     = 'Distribución de participación';
 $string['filterbytype']        = 'Filtrar por tipo:';
 $string['haventviewed']        = 'No han visto';
 $string['haveviewed']          = 'Han visto';
@@ -77,6 +78,8 @@ $string['plugindesc']          = 'Seguimiento de las interacciones de los estudi
 $string['pluginname']          = 'Course Radar';
 
 $string['resetfilter']         = 'Restablecer';
+$string['riskscore']           = 'Puntuación';
+$string['riskscore_desc']      = 'Puntuación de participación (0–100)';
 $string['searchstudent']       = 'Buscar alumno...';
 $string['sendmsg']             = 'Enviar mensaje';
 $string['showhidden']          = 'Mostrar actividades ocultas';

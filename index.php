@@ -402,6 +402,21 @@ foreach ($validcms as $cmid => $cm) {
 }
 $avgengagement = $engagements ? round(array_sum($engagements) / count($engagements)) : 0;
 
+// Engagement distribution: count students per quartile of resources visited.
+$engdist = [0 => 0, 25 => 0, 50 => 0, 75 => 0];
+foreach ($students as $uid => $stu) {
+    $pct = ($totalmodules > 0) ? round((count($studentlog[$uid] ?? []) / $totalmodules) * 100) : 0;
+    if ($pct < 25) {
+        $engdist[0]++;
+    } else if ($pct < 50) {
+        $engdist[25]++;
+    } else if ($pct < 75) {
+        $engdist[50]++;
+    } else {
+        $engdist[75]++;
+    }
+}
+
 // Aggregate interactions by module type.
 $bytype = [];
 foreach ($validcms as $cmid => $cm) {
@@ -461,6 +476,21 @@ foreach ($students as $uid => $stu) {
         }
     }
     $daysinactive[$uid] = report_courseradar_days_inactive($lastact);
+}
+
+// Composite engagement score per student (0 = no activity, 100 = fully engaged).
+$riskscores = [];
+foreach ($students as $uid => $stu) {
+    $visited = count($studentlog[$uid] ?? []);
+    $visitpct = ($totalmodules > 0) ? ($visited / $totalmodules) * 100 : 0;
+    $days = $daysinactive[$uid];
+    $recpct = ($days < 0) ? 0.0 : max(0.0, 100.0 - ($days * 100.0 / 30.0));
+    if ($hasanycompletion && $totaltracked > 0) {
+        $complpct = (($completedbystu[$uid] ?? 0) / $totaltracked) * 100;
+        $riskscores[$uid] = min(100, (int)round($visitpct * 0.35 + $recpct * 0.35 + $complpct * 0.30));
+    } else {
+        $riskscores[$uid] = min(100, (int)round($visitpct * 0.50 + $recpct * 0.50));
+    }
 }
 
 // Activity chart data.
@@ -552,8 +582,8 @@ foreach ($validcms as $cm) {
 
 // Number of resource table columns (varies when completion is enabled).
 $rescols = $hasanycompletion ? 8 : 7;
-// Number of student table columns (base 9 + 1 if completion tracking active).
-$stucols = $hasanycompletion ? 10 : 9;
+// Number of student table columns (base 10 + 1 if completion tracking active).
+$stucols = $hasanycompletion ? 11 : 10;
 
 // Output.
 echo $OUTPUT->header();
@@ -1003,6 +1033,52 @@ function crSortStudents(th, isNumeric) {
       </div>
     </div>
 
+  </div>
+</div>
+<?php endif; ?>
+
+<!-- ── Distribución de engagement ───────────────────────────────────────── -->
+<?php if ($totalstudents > 0 && $totalmodules > 0): ?>
+<div class="card cr-card mb-4">
+  <div class="card-header bg-white border-bottom py-3">
+    <h5 class="mb-0 fw-bold">
+      <?php echo $OUTPUT->pix_icon('i/stats', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('engdistribution', 'report_courseradar'); ?>
+    </h5>
+  </div>
+  <div class="card-body">
+    <?php
+      $engbuckets = [
+          ['label' => '75–100%', 'count' => $engdist[75], 'class' => 'bg-success'],
+          ['label' => '50–74%',  'count' => $engdist[50],  'class' => 'bg-info'],
+          ['label' => '25–49%',  'count' => $engdist[25],  'class' => 'bg-warning'],
+          ['label' => '0–24%',   'count' => $engdist[0],   'class' => 'bg-danger'],
+      ];
+    ?>
+    <?php foreach ($engbuckets as $bucket): ?>
+    <div class="d-flex align-items-center mb-2 gap-2">
+      <div style="width:4.5rem;" class="text-end">
+        <small class="text-muted fw-semibold"><?php echo $bucket['label']; ?></small>
+      </div>
+      <div class="flex-grow-1">
+        <?php $bpct = ($totalstudents > 0) ? round(($bucket['count'] / $totalstudents) * 100) : 0; ?>
+        <div class="progress" style="height:18px;">
+          <div class="progress-bar <?php echo $bucket['class']; ?>"
+               role="progressbar"
+               style="width:<?php echo $bpct; ?>%"
+               aria-valuenow="<?php echo $bpct; ?>"
+               aria-valuemin="0" aria-valuemax="100">
+            <?php if ($bpct >= 10): ?><?php echo $bucket['count']; ?><?php endif; ?>
+          </div>
+        </div>
+      </div>
+      <div style="width:2.5rem;">
+        <small class="<?php echo $bucket['count'] === 0 ? 'text-muted' : 'fw-semibold'; ?>">
+          <?php echo $bucket['count']; ?>
+        </small>
+      </div>
+    </div>
+    <?php endforeach; ?>
   </div>
 </div>
 <?php endif; ?>
@@ -1595,6 +1671,13 @@ function crSortStudents(th, isNumeric) {
               </small>
             </th>
             <?php endif; ?>
+            <th class="cr-th-sort text-center" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('riskscore', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('riskscore_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
             <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
           </tr>
         </thead>
@@ -1715,6 +1798,14 @@ function crSortStudents(th, isNumeric) {
             </td>
             <?php endif; ?>
 
+            <?php
+              $rscore = $riskscores[$uid];
+              $rscoreclass = $rscore >= 75 ? 'bg-success' : ($rscore >= 50 ? 'bg-warning text-dark' : 'bg-danger');
+            ?>
+            <td class="text-center" data-sort="<?php echo $rscore; ?>">
+              <span class="badge <?php echo $rscoreclass; ?>"><?php echo $rscore; ?></span>
+            </td>
+
             <td class="text-center">
               <button class="btn btn-sm btn-outline-secondary"
                       type="button"
@@ -1761,16 +1852,32 @@ function crSortStudents(th, isNumeric) {
                 </div>
                 <?php endforeach; ?>
                 <?php if (!empty($sparklines[$uid])): ?>
+                <?php
+                  $spbars  = $sparklines[$uid];
+                  $spcount = count($spbars);
+                  $splast  = $spbars[$spcount - 1]['cnt'];
+                  $spprev  = $spcount > 1 ? $spbars[$spcount - 2]['cnt'] : 0;
+                  if ($spprev === 0 && $splast === 0):
+                    $spicon = '—'; $spclass = 'text-muted'; $sppctstr = '';
+                  elseif ($spprev === 0):
+                    $spicon = '↑'; $spclass = 'text-success'; $sppctstr = '+100%';
+                  else:
+                    $sppct_n = round((($splast - $spprev) / $spprev) * 100);
+                    $spicon  = $sppct_n > 0 ? '↑' : ($sppct_n < 0 ? '↓' : '→');
+                    $spclass = $sppct_n > 0 ? 'text-success' : ($sppct_n < 0 ? 'text-danger' : 'text-muted');
+                    $sppctstr = $sppct_n > 0 ? '+' . $sppct_n . '%' : $sppct_n . '%';
+                  endif;
+                ?>
                 <div class="mt-3">
                   <small class="text-muted fw-semibold d-block mb-1">
                     <?php echo get_string('weeklyactivity', 'report_courseradar'); ?>
+                    <span class="<?php echo $spclass; ?> ms-2"><?php echo $spicon; ?> <?php echo $sppctstr; ?></span>
+                    <span class="text-muted ms-1"><?php echo get_string('weekvspreview', 'report_courseradar'); ?></span>
                   </small>
                   <div class="cr-sparkline">
-                    <?php foreach ($sparklines[$uid] as $bar): ?>
+                    <?php foreach ($spbars as $bar): ?>
                     <div class="cr-spark-bar"
                          style="height:<?php echo $bar['height']; ?>%"
-                         data-bs-toggle="tooltip"
-                         data-bs-placement="top"
                          title="<?php echo s($bar['label']); ?>: <?php echo $bar['cnt']; ?> <?php echo get_string('times', 'report_courseradar'); ?>">
                     </div>
                     <?php endforeach; ?>

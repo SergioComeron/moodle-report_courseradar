@@ -50,6 +50,7 @@ $string['dateto']              = 'To';
 $string['daysinactive']    = 'Days inactive';
 $string['daysinactive_desc']   = 'Days since last interaction';
 $string['details']             = 'Detail';
+$string['engdistribution']     = 'Engagement distribution';
 $string['filterbytype']        = 'Filter by type:';
 $string['haventviewed']        = "Haven't viewed";
 $string['haveviewed']          = 'Have viewed';
@@ -77,6 +78,8 @@ $string['plugindesc']          = 'Track student interactions with course resourc
 $string['pluginname']          = 'Course Radar';
 
 $string['resetfilter']         = 'Reset';
+$string['riskscore']           = 'Score';
+$string['riskscore_desc']      = 'Engagement score (0–100)';
 $string['resetsort']           = 'Back to section view';
 $string['resource']            = 'Resource / Activity';
 $string['resourceactivity']    = 'Resources & Activities';
