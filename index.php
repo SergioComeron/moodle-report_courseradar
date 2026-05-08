@@ -624,6 +624,12 @@ function crToggle(btn, rowId) {
     }
 }
 
+function crToggleDiv(id) {
+    var el = document.getElementById(id);
+    if (!el) { return; }
+    el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
 /* ── Ordenar tabla de recursos ─────────────────────────────────────────────── */
 function crSortResources(th, isNumeric) {
     var table = document.getElementById('cr-resources-table');
@@ -972,14 +978,12 @@ function crSortStudents(th, isNumeric) {
     <div class="mt-3 pt-3 border-top">
       <button class="btn btn-sm btn-outline-danger"
               type="button"
-              data-bs-toggle="collapse"
-              data-bs-target="#cr-risk-msgform"
-              aria-expanded="false">
+              onclick="crToggleDiv('cr-risk-msgform')">
         <?php echo $OUTPUT->pix_icon('t/message', '', 'core', ['class' => 'me-1']); ?>
         <?php echo get_string('notifyrisk', 'report_courseradar'); ?>
         <span class="badge bg-danger text-white ms-1"><?php echo $totalrisk; ?></span>
       </button>
-      <div class="collapse mt-3" id="cr-risk-msgform">
+      <div class="mt-3" id="cr-risk-msgform" style="display:none;">
         <form method="post"
               action="<?php echo (new moodle_url('/report/courseradar/index.php', ['id' => $courseid]))->out(false); ?>">
           <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
