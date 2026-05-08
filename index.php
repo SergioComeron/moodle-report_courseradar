@@ -1872,9 +1872,10 @@ function crSortStudents(th, isNumeric) {
           <tr id="<?php echo $studetailid; ?>" class="cr-detail-row" style="display:none;">
             <td colspan="<?php echo $stucols - 1; ?>">
               <div class="cr-detail-inner p-3">
-                <div class="d-flex gap-3 mb-3">
-                  <small class="text-muted"><span class="cr-act-icon d-inline-flex me-1" style="background:#0d6efd22;border:1px solid #0d6efd55;width:18px;height:18px;border-radius:3px;vertical-align:middle;"></span><?php echo get_string('haveviewed', 'report_courseradar'); ?></small>
-                  <small class="text-muted"><span class="cr-act-icon d-inline-flex me-1" style="background:#f0f2f5;border:1px solid #dee2e6;width:18px;height:18px;border-radius:3px;vertical-align:middle;"></span><?php echo get_string('haventviewed', 'report_courseradar'); ?></small>
+                <div class="d-flex gap-3 mb-3 flex-wrap">
+                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#0d6efd22;border:1px solid #0d6efd55;flex-shrink:0;"></span><?php echo get_string('haveviewed', 'report_courseradar'); ?></small>
+                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#19875422;border:1px solid #19875455;flex-shrink:0;"></span><?php echo get_string('completed', 'report_courseradar'); ?></small>
+                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#f0f2f5;border:1px solid #dee2e6;flex-shrink:0;"></span><?php echo get_string('haventviewed', 'report_courseradar'); ?></small>
                 </div>
                 <?php foreach ($bysection as $snum => $section): ?>
                 <?php
@@ -1891,44 +1892,40 @@ function crSortStudents(th, isNumeric) {
                 ?>
                 <div class="mb-3">
                   <small class="text-muted fw-semibold d-block mb-1"><?php echo $section['name']; ?></small>
-                  <div class="row g-2">
-                    <div class="col-6">
-                      <div class="cr-act-grid">
-                        <?php foreach ($secvisited as $cm): ?>
-                        <?php
-                          $cmid = $cm->id;
-                          $svcount = $studentlog[$uid][$cmid] ?? 0;
-                          $completed_stu = $completionenabled && $cm->completion > 0
-                              && isset($completionbyuser[$cmid][$uid]);
-                          $bgcol   = $completed_stu ? '#198754' : '#0d6efd';
-                          $title   = s(format_string($cm->name)) . ' (' . $svcount . ' ' . get_string('times', 'report_courseradar') . ')';
-                          if ($completed_stu) { $title .= ' ✓'; }
-                        ?>
-                        <span class="cr-act-icon <?php echo $completed_stu ? 'cr-act-done' : ''; ?>"
-                              style="background:<?php echo $bgcol; ?>22; border:1px solid <?php echo $bgcol; ?>55;"
-                              title="<?php echo $title; ?>">
-                          <img src="<?php echo $cm->get_icon_url()->out(false); ?>" alt="">
-                          <?php if ($svcount > 1): ?>
-                          <span class="cr-act-cnt <?php echo $completed_stu ? 'bg-success' : ''; ?>"><?php echo $svcount; ?></span>
-                          <?php endif; ?>
-                        </span>
-                        <?php endforeach; ?>
-                        <?php if (empty($secvisited)): ?>
-                          <small class="text-muted fst-italic"><?php echo get_string('noviewsyet', 'report_courseradar'); ?></small>
+                  <div class="d-flex align-items-start gap-0">
+                    <div class="cr-act-grid flex-grow-1 pe-2">
+                      <?php foreach ($secvisited as $cm): ?>
+                      <?php
+                        $cmid = $cm->id;
+                        $svcount = $studentlog[$uid][$cmid] ?? 0;
+                        $completed_stu = $completionenabled && $cm->completion > 0
+                            && isset($completionbyuser[$cmid][$uid]);
+                        $bgcol = $completed_stu ? '#198754' : '#0d6efd';
+                        $title = s(format_string($cm->name)) . ' (' . $svcount . ' ' . get_string('times', 'report_courseradar') . ')';
+                        if ($completed_stu) { $title .= ' ✓'; }
+                      ?>
+                      <span class="cr-act-icon <?php echo $completed_stu ? 'cr-act-done' : ''; ?>"
+                            style="background:<?php echo $bgcol; ?>22;border:1px solid <?php echo $bgcol; ?>55;"
+                            title="<?php echo $title; ?>">
+                        <img src="<?php echo $cm->get_icon_url()->out(false); ?>" alt="">
+                        <?php if ($svcount > 1): ?>
+                        <span class="cr-act-cnt <?php echo $completed_stu ? 'bg-success' : ''; ?>"><?php echo $svcount; ?></span>
                         <?php endif; ?>
-                      </div>
+                      </span>
+                      <?php endforeach; ?>
+                      <?php if (empty($secvisited)): ?>
+                        <small class="text-muted fst-italic"><?php echo get_string('noviewsyet', 'report_courseradar'); ?></small>
+                      <?php endif; ?>
                     </div>
                     <?php if (!empty($secunseen)): ?>
-                    <div class="col-6">
-                      <div class="cr-act-grid">
-                        <?php foreach ($secunseen as $cm): ?>
-                        <span class="cr-act-icon"
-                              style="background:#f0f2f5; border:1px solid #dee2e6;"
-                              title="<?php echo s(format_string($cm->name)); ?>">
-                          <img src="<?php echo $cm->get_icon_url()->out(false); ?>" alt="" style="opacity:.45;">
-                        </span>
-                        <?php endforeach; ?>
-                      </div>
+                    <div class="border-start ps-2 cr-act-grid" style="min-width:0;">
+                      <?php foreach ($secunseen as $cm): ?>
+                      <span class="cr-act-icon"
+                            style="background:#f0f2f5;border:1px solid #dee2e6;"
+                            title="<?php echo s(format_string($cm->name)); ?>">
+                        <img src="<?php echo $cm->get_icon_url()->out(false); ?>" alt="" style="opacity:.4;">
+                      </span>
+                      <?php endforeach; ?>
                     </div>
                     <?php endif; ?>
                   </div>
