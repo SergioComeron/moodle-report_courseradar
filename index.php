@@ -606,9 +606,11 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 /* ── Inicializar tooltips Bootstrap ───────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function() {
     crApplyFilters();
-    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
-        new bootstrap.Tooltip(el);
-    });
+    if (typeof bootstrap !== 'undefined') {
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+            new bootstrap.Tooltip(el);
+        });
+    }
 });
 
 /* ── Toggle fila de detalle ────────────────────────────────────────────────── */
