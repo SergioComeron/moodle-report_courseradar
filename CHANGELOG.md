@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.3.0...v1.3.1) (2026-05-08)
+
+
+### Bug Fixes
+
+* move resetsort before riskscore in lang/en to fix CI codechecker ([a65ca47](https://github.com/SergioComeron/moodle-report_courseradar/commit/a65ca4735bda4c919ac18b56945d92329dd7a6bf))
+
 ## [1.3.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.2.0...v1.3.0) (2026-05-08)
 
 
