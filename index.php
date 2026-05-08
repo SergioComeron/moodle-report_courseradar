@@ -662,6 +662,14 @@ function crToggleDiv(id) {
     el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
+/* ── Pestañas principales ──────────────────────────────────────────────────── */
+function crShowTab(tabId) {
+    document.querySelectorAll('.cr-tab-panel').forEach(function(p) { p.style.display = 'none'; });
+    document.querySelectorAll('.cr-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.getElementById(tabId).style.display = '';
+    document.querySelector('[data-tab="' + tabId + '"]').classList.add('active');
+}
+
 /* ── Ordenar tabla de recursos ─────────────────────────────────────────────── */
 function crSortResources(th, isNumeric) {
     var table = document.getElementById('cr-resources-table');
@@ -865,6 +873,32 @@ function crSortStudents(th, isNumeric) {
   </div>
 </div>
 
+<!-- ── Navegación por pestañas ──────────────────────────────────────────── -->
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item">
+    <button class="nav-link active cr-tab-btn" data-tab="cr-tab-overview"
+            onclick="crShowTab('cr-tab-overview')">
+      <?php echo $OUTPUT->pix_icon('i/dashboard', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('tab_overview', 'report_courseradar'); ?>
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link cr-tab-btn" data-tab="cr-tab-resources"
+            onclick="crShowTab('cr-tab-resources')">
+      <?php echo $OUTPUT->pix_icon('i/course', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('tab_resources', 'report_courseradar'); ?>
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link cr-tab-btn" data-tab="cr-tab-students"
+            onclick="crShowTab('cr-tab-students')">
+      <?php echo $OUTPUT->pix_icon('i/group', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('tab_students', 'report_courseradar'); ?>
+    </button>
+  </li>
+</ul>
+
+<div id="cr-tab-overview" class="cr-tab-panel">
 <!-- ── Tarjetas de resumen ───────────────────────────────────────────────── -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-lg">
@@ -1045,6 +1079,7 @@ function crSortStudents(th, isNumeric) {
       <?php echo $OUTPUT->pix_icon('i/stats', '', 'core', ['class' => 'me-1']); ?>
       <?php echo get_string('engdistribution', 'report_courseradar'); ?>
     </h5>
+    <small class="text-muted"><?php echo get_string('engdistribution_desc', 'report_courseradar'); ?></small>
   </div>
   <div class="card-body">
     <?php
@@ -1182,6 +1217,7 @@ function crSortStudents(th, isNumeric) {
             </small>
           <?php endif; ?>
         </h5>
+        <small class="text-muted"><?php echo get_string('activityovertime_desc', 'report_courseradar'); ?></small>
       </div>
       <div class="card-body">
         <?php echo $OUTPUT->render($chartobj); ?>
@@ -1197,6 +1233,7 @@ function crSortStudents(th, isNumeric) {
         <h5 class="mb-0 fw-bold">
           <?php echo get_string('activitypattern', 'report_courseradar'); ?>
         </h5>
+        <small class="text-muted"><?php echo get_string('activitypattern_desc', 'report_courseradar'); ?></small>
       </div>
       <div class="card-body p-3 overflow-auto">
         <table class="cr-heatmap">
@@ -1237,6 +1274,9 @@ function crSortStudents(th, isNumeric) {
 </div>
 <?php endif; ?>
 
+</div><!-- /cr-tab-overview -->
+
+<div id="cr-tab-resources" class="cr-tab-panel" style="display:none;">
 <!-- ── Resumen por tipo de módulo ──────────────────────────────────────────-->
 <?php if (!empty($bytype)): ?>
 <div class="card cr-card mb-4">
@@ -1245,6 +1285,7 @@ function crSortStudents(th, isNumeric) {
       <?php echo $OUTPUT->pix_icon('i/stats', '', 'core', ['class' => 'me-1']); ?>
       <?php echo get_string('moduletypesummary', 'report_courseradar'); ?>
     </h5>
+    <small class="text-muted"><?php echo get_string('moduletypesummary_desc', 'report_courseradar'); ?></small>
   </div>
   <div class="card-body">
     <?php foreach ($bytype as $mod => $data): ?>
@@ -1281,11 +1322,14 @@ function crSortStudents(th, isNumeric) {
 <!-- ── Tabla de recursos por sección ──────────────────────────────────────-->
 <div class="card cr-card mb-4">
   <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
-    <h5 class="mb-0 fw-bold">
-      <?php echo $OUTPUT->pix_icon('i/course', '', 'core', ['class' => 'me-1']); ?>
-      <?php echo get_string('resourceactivity', 'report_courseradar'); ?>
-      <span class="badge bg-secondary ms-2"><?php echo $totalmodules; ?></span>
-    </h5>
+    <div>
+      <h5 class="mb-0 fw-bold">
+        <?php echo $OUTPUT->pix_icon('i/course', '', 'core', ['class' => 'me-1']); ?>
+        <?php echo get_string('resourceactivity', 'report_courseradar'); ?>
+        <span class="badge bg-secondary ms-2"><?php echo $totalmodules; ?></span>
+      </h5>
+      <small class="text-muted"><?php echo get_string('resourceactivity_desc', 'report_courseradar'); ?></small>
+    </div>
     <div class="d-flex align-items-center gap-3">
       <?php if ($hashidden): ?>
       <div class="form-check form-switch mb-0">
@@ -1588,6 +1632,9 @@ function crSortStudents(th, isNumeric) {
   </div>
 </div><!-- /card recursos -->
 
+</div><!-- /cr-tab-resources -->
+
+<div id="cr-tab-students" class="cr-tab-panel" style="display:none;">
 <!-- ── Tabla de actividad por estudiante ─────────────────────────────────── -->
 <div class="card cr-card mb-4">
   <div class="card-header bg-white border-bottom py-3">
@@ -1596,6 +1643,7 @@ function crSortStudents(th, isNumeric) {
       <?php echo get_string('studentengagement', 'report_courseradar'); ?>
       <span class="badge bg-secondary ms-2"><?php echo $totalstudents; ?></span>
     </h5>
+    <small class="text-muted"><?php echo get_string('studentengagement_desc', 'report_courseradar'); ?></small>
   </div>
   <?php if ($totalstudents > 5): ?>
   <div class="px-3 pt-3 pb-2 border-bottom">
@@ -1896,6 +1944,7 @@ function crSortStudents(th, isNumeric) {
     </div>
   </div>
 </div><!-- /card estudiantes -->
+</div><!-- /cr-tab-students -->
 
 </div><!-- /container -->
 <?php echo $OUTPUT->footer(); ?>
