@@ -97,7 +97,6 @@ $string['uniquestudents']      = 'Students';
 $string['uniquestudents_desc'] = 'Unique students / enrolled';
 
 $string['viewprofile']         = 'View profile';
-
-
 $string['weeklyactivity'] = 'Weekly activity';
 $string['weeklyaggregated']    = 'Aggregated by week (period > 90 days)';
+$string['weekvspreview']       = 'vs. last week';

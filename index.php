@@ -215,6 +215,62 @@ if ($totalstudents > 0) {
     $rs->close();
 }
 
+// Week-over-week comparison (current calendar week vs previous week, always absolute).
+$now           = time();
+$dow           = (int)date('N', $now); // 1=Mon … 7=Sun (ISO-8601).
+$curweekstart  = mktime(0, 0, 0, (int)date('n', $now), (int)date('j', $now) - ($dow - 1));
+$prevweekstart = $curweekstart - 604800;
+
+$wkcurinteractions  = 0;
+$wkprevinteractions = 0;
+$wkcurvisits        = 0;
+$wkprevvisits       = 0;
+
+if ($totalstudents > 0) {
+    if ($totalmodules > 0) {
+        [$wkinsql, $wkinparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'wka');
+        $wkrow = $DB->get_record_sql(
+            "SELECT COUNT(CASE WHEN timecreated >= :curstart  THEN 1 END) AS curwk,
+                    COUNT(CASE WHEN timecreated <  :curstart2 THEN 1 END) AS prevwk
+               FROM {logstore_standard_log}
+              WHERE courseid     = :courseid
+                AND action       = 'viewed'
+                AND contextlevel = :contextlevel
+                AND timecreated >= :prevstart
+                AND userid {$wkinsql}",
+            array_merge([
+                'courseid'     => $courseid,
+                'contextlevel' => CONTEXT_MODULE,
+                'curstart'     => $curweekstart,
+                'curstart2'    => $curweekstart,
+                'prevstart'    => $prevweekstart,
+            ], $wkinparams)
+        );
+        $wkcurinteractions = $wkrow ? (int)$wkrow->curwk : 0;
+        $wkprevinteractions = $wkrow ? (int)$wkrow->prevwk : 0;
+    }
+
+    [$wkinsql2, $wkinparams2] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'wkb');
+    $wkrow2 = $DB->get_record_sql(
+        "SELECT COUNT(CASE WHEN timecreated >= :curstart  THEN 1 END) AS curwk,
+                COUNT(CASE WHEN timecreated <  :curstart2 THEN 1 END) AS prevwk
+           FROM {logstore_standard_log}
+          WHERE courseid     = :courseid
+            AND action       = 'viewed'
+            AND target       = 'course'
+            AND timecreated >= :prevstart
+            AND userid {$wkinsql2}",
+        array_merge([
+            'courseid'  => $courseid,
+            'curstart'  => $curweekstart,
+            'curstart2' => $curweekstart,
+            'prevstart' => $prevweekstart,
+        ], $wkinparams2)
+    );
+    $wkcurvisits = $wkrow2 ? (int)$wkrow2->curwk : 0;
+    $wkprevvisits = $wkrow2 ? (int)$wkrow2->prevwk : 0;
+}
+
 // Pre-compute sparkline bars for every student.
 $weekslots = [];
 for ($w = (int)($datefrom / 604800) * 604800; $w <= $dateto; $w += 604800) {
@@ -729,6 +785,22 @@ function crSortStudents(th, isNumeric) {
       <div class="card-body">
         <div class="cr-stat text-success"><?php echo number_format($totalinteractions); ?></div>
         <div class="cr-stat-label"><?php echo get_string('totalinteractions', 'report_courseradar'); ?></div>
+        <?php if ($totalstudents > 0 && $totalmodules > 0):
+          if ($wkprevinteractions === 0 && $wkcurinteractions === 0):
+            $wkiicon = '—'; $wkiclass = 'text-muted'; $wkipct = '';
+          elseif ($wkprevinteractions === 0):
+            $wkiicon = '↑'; $wkiclass = 'text-success'; $wkipct = '+100%';
+          else:
+            $wkipct_n = round((($wkcurinteractions - $wkprevinteractions) / $wkprevinteractions) * 100);
+            $wkiicon  = $wkipct_n > 0 ? '↑' : ($wkipct_n < 0 ? '↓' : '→');
+            $wkiclass = $wkipct_n > 0 ? 'text-success' : ($wkipct_n < 0 ? 'text-danger' : 'text-muted');
+            $wkipct   = $wkipct_n > 0 ? '+' . $wkipct_n . '%' : $wkipct_n . '%';
+          endif; ?>
+        <div class="mt-1">
+          <small class="<?php echo $wkiclass; ?> fw-semibold"><?php echo $wkiicon; ?> <?php echo $wkipct; ?></small>
+          <small class="text-muted ms-1"><?php echo get_string('weekvspreview', 'report_courseradar'); ?></small>
+        </div>
+        <?php endif; ?>
       </div>
     </div>
   </div>
@@ -737,6 +809,22 @@ function crSortStudents(th, isNumeric) {
       <div class="card-body">
         <div class="cr-stat text-secondary"><?php echo number_format($totalcoursevisits); ?></div>
         <div class="cr-stat-label"><?php echo get_string('coursevisits', 'report_courseradar'); ?></div>
+        <?php if ($totalstudents > 0):
+          if ($wkprevvisits === 0 && $wkcurvisits === 0):
+            $wkvicon = '—'; $wkvclass = 'text-muted'; $wkvpct = '';
+          elseif ($wkprevvisits === 0):
+            $wkvicon = '↑'; $wkvclass = 'text-success'; $wkvpct = '+100%';
+          else:
+            $wkvpct_n = round((($wkcurvisits - $wkprevvisits) / $wkprevvisits) * 100);
+            $wkvicon  = $wkvpct_n > 0 ? '↑' : ($wkvpct_n < 0 ? '↓' : '→');
+            $wkvclass = $wkvpct_n > 0 ? 'text-success' : ($wkvpct_n < 0 ? 'text-danger' : 'text-muted');
+            $wkvpct   = $wkvpct_n > 0 ? '+' . $wkvpct_n . '%' : $wkvpct_n . '%';
+          endif; ?>
+        <div class="mt-1">
+          <small class="<?php echo $wkvclass; ?> fw-semibold"><?php echo $wkvicon; ?> <?php echo $wkvpct; ?></small>
+          <small class="text-muted ms-1"><?php echo get_string('weekvspreview', 'report_courseradar'); ?></small>
+        </div>
+        <?php endif; ?>
       </div>
     </div>
   </div>
