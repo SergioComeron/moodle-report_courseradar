@@ -37,6 +37,41 @@ $context = context_course::instance($courseid);
 require_login($course);
 require_capability('report/courseradar:view', $context);
 
+// Handle message-send action (POST from the at-risk form).
+if (optional_param('sendmsg', 0, PARAM_INT)) {
+    require_sesskey();
+    $msgtext = required_param('msgtext', PARAM_TEXT);
+    $uidlist = required_param('uids', PARAM_SEQUENCE);
+    $uidarr  = array_filter(array_map('intval', explode(',', $uidlist)));
+    $allstus = report_courseradar_get_students($context);
+    $sent    = 0;
+    foreach ($uidarr as $tuid) {
+        if (!isset($allstus[$tuid])) {
+            continue;
+        }
+        $msg = new \core\message\message();
+        $msg->component         = 'moodle';
+        $msg->name              = 'instantmessage';
+        $msg->userfrom          = $USER;
+        $msg->userto            = $allstus[$tuid];
+        $msg->subject           = format_string($course->shortname);
+        $msg->fullmessage       = $msgtext;
+        $msg->fullmessageformat = FORMAT_PLAIN;
+        $msg->fullmessagehtml   = '';
+        $msg->smallmessage      = '';
+        $msg->notification      = 0;
+        $msg->courseid          = $courseid;
+        message_send($msg);
+        $sent++;
+    }
+    redirect(
+        new moodle_url('/report/courseradar/index.php', ['id' => $courseid]),
+        get_string('msgsent', 'report_courseradar') . ' (' . $sent . ')',
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
+}
+
 // Date range.
 $defaultfrom = $course->startdate ?: mktime(0, 0, 0, 1, 1, (int)date('Y'));
 if (!$defaultfrom) {
@@ -327,6 +362,26 @@ if ($completionenabled) {
     }
 }
 
+// Per-student completion progress.
+$totaltracked   = 0;
+$completedbystu = [];
+if ($hasanycompletion) {
+    foreach ($validcms as $cm) {
+        if ($cm->completion > 0) {
+            $totaltracked++;
+        }
+    }
+    foreach ($students as $uid => $stu) {
+        $count = 0;
+        foreach ($validcms as $cmid => $cm) {
+            if ($cm->completion > 0 && isset($completionbyuser[$cmid][$uid])) {
+                $count++;
+            }
+        }
+        $completedbystu[$uid] = $count;
+    }
+}
+
 // Summary statistics.
 $totalinteractions = 0;
 $maxviews          = 0;
@@ -497,6 +552,8 @@ foreach ($validcms as $cm) {
 
 // Number of resource table columns (varies when completion is enabled).
 $rescols = $hasanycompletion ? 8 : 7;
+// Number of student table columns (base 9 + 1 if completion tracking active).
+$stucols = $hasanycompletion ? 10 : 9;
 
 // Output.
 echo $OUTPUT->header();
@@ -910,6 +967,36 @@ function crSortStudents(th, isNumeric) {
       <?php endif; ?>
 
     </div>
+
+    <!-- Formulario de mensaje a alumnos en riesgo -->
+    <div class="mt-3 pt-3 border-top">
+      <button class="btn btn-sm btn-outline-danger"
+              type="button"
+              data-bs-toggle="collapse"
+              data-bs-target="#cr-risk-msgform"
+              aria-expanded="false">
+        <?php echo $OUTPUT->pix_icon('t/message', '', 'core', ['class' => 'me-1']); ?>
+        <?php echo get_string('notifyrisk', 'report_courseradar'); ?>
+        <span class="badge bg-danger text-white ms-1"><?php echo $totalrisk; ?></span>
+      </button>
+      <div class="collapse mt-3" id="cr-risk-msgform">
+        <form method="post"
+              action="<?php echo (new moodle_url('/report/courseradar/index.php', ['id' => $courseid]))->out(false); ?>">
+          <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+          <input type="hidden" name="sendmsg" value="1">
+          <input type="hidden" name="uids"
+                 value="<?php echo s(implode(',', array_merge(array_keys($atrisknone), array_keys($atrisklow)))); ?>">
+          <textarea class="form-control form-control-sm mb-2" name="msgtext" rows="3"
+                    placeholder="<?php echo get_string('notifyrisk_placeholder', 'report_courseradar'); ?>"
+                    required></textarea>
+          <button type="submit" class="btn btn-sm btn-danger">
+            <?php echo $OUTPUT->pix_icon('t/message', '', 'core', ['class' => 'me-1']); ?>
+            <?php echo get_string('sendmsg', 'report_courseradar'); ?>
+          </button>
+        </form>
+      </div>
+    </div>
+
   </div>
 </div>
 <?php endif; ?>
@@ -1493,6 +1580,15 @@ function crSortStudents(th, isNumeric) {
                 <?php echo get_string('daysinactive_desc', 'report_courseradar'); ?>
               </small>
             </th>
+            <?php if ($hasanycompletion): ?>
+            <th class="cr-th-sort text-center" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('completionstu', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('completionstu_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
+            <?php endif; ?>
             <th class="text-center"><?php echo get_string('details', 'report_courseradar'); ?></th>
           </tr>
         </thead>
@@ -1500,7 +1596,7 @@ function crSortStudents(th, isNumeric) {
 
 <?php if (empty($students)): ?>
           <tr>
-            <td colspan="9" class="text-center text-muted py-5">
+            <td colspan="<?php echo $stucols; ?>" class="text-center text-muted py-5">
               <?php echo get_string('nostudents', 'report_courseradar'); ?>
             </td>
           </tr>
@@ -1601,6 +1697,18 @@ function crSortStudents(th, isNumeric) {
               <?php endif; ?>
             </td>
 
+            <?php if ($hasanycompletion):
+              $stucomp = $completedbystu[$uid] ?? 0;
+              $compclass = ($totaltracked > 0 && $stucomp === $totaltracked)
+                  ? 'text-success'
+                  : ($stucomp > 0 ? 'text-warning' : 'cr-zero');
+            ?>
+            <td class="text-center fw-semibold <?php echo $compclass; ?>"
+                data-sort="<?php echo $stucomp; ?>">
+              <?php echo $stucomp; ?>/<?php echo $totaltracked; ?>
+            </td>
+            <?php endif; ?>
+
             <td class="text-center">
               <button class="btn btn-sm btn-outline-secondary"
                       type="button"
@@ -1612,7 +1720,7 @@ function crSortStudents(th, isNumeric) {
 
           <!-- Detalle del estudiante -->
           <tr id="<?php echo $studetailid; ?>" class="cr-detail-row" style="display:none;">
-            <td colspan="8">
+            <td colspan="<?php echo $stucols - 1; ?>">
               <div class="cr-detail-inner p-3">
                 <?php foreach ($bysection as $snum => $section): ?>
                 <div class="mb-2">
