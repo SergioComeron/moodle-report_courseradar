@@ -1874,7 +1874,7 @@ function crSortStudents(th, isNumeric) {
               <div class="cr-detail-inner p-3">
                 <div class="d-flex gap-3 mb-3 flex-wrap">
                   <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#0d6efd22;border:1px solid #0d6efd55;flex-shrink:0;"></span><?php echo get_string('haveviewed', 'report_courseradar'); ?></small>
-                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#19875422;border:1px solid #19875455;flex-shrink:0;"></span><?php echo get_string('completed', 'report_courseradar'); ?></small>
+                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#19875422;border:1px solid #19875455;flex-shrink:0;"></span><?php echo get_string('completion', 'report_courseradar'); ?></small>
                   <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#f0f2f5;border:1px solid #dee2e6;flex-shrink:0;"></span><?php echo get_string('haventviewed', 'report_courseradar'); ?></small>
                 </div>
                 <?php foreach ($bysection as $snum => $section): ?>
@@ -1892,8 +1892,8 @@ function crSortStudents(th, isNumeric) {
                 ?>
                 <div class="mb-3">
                   <small class="text-muted fw-semibold d-block mb-1"><?php echo $section['name']; ?></small>
-                  <div class="d-flex align-items-start gap-0">
-                    <div class="cr-act-grid flex-grow-1 pe-2">
+                  <div class="d-flex align-items-start">
+                    <div class="cr-act-grid me-2 pe-2 border-end">
                       <?php foreach ($secvisited as $cm): ?>
                       <?php
                         $cmid = $cm->id;
@@ -1918,7 +1918,7 @@ function crSortStudents(th, isNumeric) {
                       <?php endif; ?>
                     </div>
                     <?php if (!empty($secunseen)): ?>
-                    <div class="border-start ps-2 cr-act-grid" style="min-width:0;">
+                    <div class="cr-act-grid ps-2">
                       <?php foreach ($secunseen as $cm): ?>
                       <span class="cr-act-icon"
                             style="background:#f0f2f5;border:1px solid #dee2e6;"
