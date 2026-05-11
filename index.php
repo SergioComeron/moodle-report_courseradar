@@ -115,7 +115,8 @@ $logdata    = []; // Keyed by cmid: totalviews, uniqueusers, lastaccess.
 $bycm       = []; // Keyed [cmid][uid]: views, lastaccess.
 $studentlog = []; // Keyed [uid][cmid]: view count.
 $byday      = []; // Keyed by Y-m-d date string: interaction count.
-$heatmap    = array_fill(0, 7, array_fill(0, 6, 0)); // Dow 0=Sun to 6=Sat, 4-hour blocks 0-5.
+$heatmap        = array_fill(0, 7, array_fill(0, 6, 0));    // Dow 0=Sun to 6=Sat, 4-hour blocks 0-5.
+$heatstudents   = array_fill(0, 7, array_fill(0, 6, [])); // Same structure: list of fullnames.
 
 if ($totalstudents > 0 && $totalmodules > 0) {
     [$insql, $inparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'st');
@@ -199,6 +200,31 @@ if ($totalstudents > 0 && $totalmodules > 0) {
         $heatmap[(int)$row->dow][(int)$row->timeblock] = (int)$row->cnt;
     }
     $rs->close();
+
+    // Heatmap per-student: distinct (dow, timeblock, userid) to populate the click panel.
+    $sql4b = "SELECT DISTINCT MOD(timecreated / 86400 + 4, 7) AS dow,
+                              timecreated % 86400 / 14400      AS timeblock,
+                              userid
+                FROM {logstore_standard_log}
+               WHERE courseid     = :courseid
+                 AND action       = :action
+                 AND contextlevel = :contextlevel
+                 AND timecreated >= :datefrom
+                 AND timecreated <= :dateto
+                 AND userid {$insql}";
+    $rs = $DB->get_recordset_sql($sql4b, $logparams);
+    foreach ($rs as $row) {
+        $uid = (int)$row->userid;
+        if (isset($students[$uid])) {
+            $heatstudents[(int)$row->dow][(int)$row->timeblock][] = fullname($students[$uid]);
+        }
+    }
+    $rs->close();
+    foreach ($heatstudents as $d => $blocks) {
+        foreach ($blocks as $b => $names) {
+            sort($heatstudents[$d][$b]);
+        }
+    }
 
     // Weekly interactions per student for sparklines (604800 = seconds in a week).
     $sql5 = "SELECT userid,
@@ -622,7 +648,9 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 /* Heatmap */
 .cr-heatmap           { border-collapse: separate; border-spacing: 3px; font-size: .78rem; width: 100%; }
 .cr-heatmap th        { font-weight: 600; padding: 3px 6px; text-align: center; white-space: nowrap; }
-.cr-heatmap td        { border-radius: 4px; padding: 5px 4px; text-align: center; min-width: 36px; cursor: default; }
+.cr-heatmap td        { border-radius: 4px; padding: 5px 4px; text-align: center; min-width: 36px; cursor: pointer; }
+.cr-heatmap td.cr-heatmap-selected { outline: 2px solid #0d6efd; outline-offset: -2px; }
+.cr-heatmap-panel     { border: 1px solid #dee2e6; border-radius: 8px; padding: .75rem 1rem; background: #f8f9fa; }
 /* Ordenación */
 .cr-th-sort           { cursor: pointer; user-select: none; white-space: nowrap; }
 .cr-th-sort::after    { content: ' ⇅'; opacity: .35; font-size: .75em; }
@@ -863,6 +891,35 @@ function crFilterType(btn) {
 }
 
 function crToggleHidden() { crApplyFilters(); crSaveState(); }
+
+var crHeatmapSelected = null;
+function crHeatmapClick(td) {
+    var panel = document.getElementById('cr-heatmap-panel');
+    if (crHeatmapSelected === td) {
+        crHeatmapClose();
+        return;
+    }
+    if (crHeatmapSelected) { crHeatmapSelected.classList.remove('cr-heatmap-selected'); }
+    crHeatmapSelected = td;
+    td.classList.add('cr-heatmap-selected');
+    var students = JSON.parse(td.dataset.students || '[]');
+    document.getElementById('cr-heatmap-panel-title').textContent =
+        td.dataset.label + ' — ' + students.length + ' ' +
+        (students.length === 1 ? '<?php echo get_string('student', 'report_courseradar'); ?>'
+                               : '<?php echo get_string('uniquestudents', 'report_courseradar'); ?>');
+    var body = document.getElementById('cr-heatmap-panel-body');
+    body.innerHTML = students.length === 0
+        ? '<span class="text-muted small"><?php echo get_string('nostudents', 'report_courseradar'); ?></span>'
+        : students.map(function(n) {
+            return '<span class="badge bg-light text-dark border">' + n + '</span>';
+          }).join('');
+    panel.classList.remove('d-none');
+    panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+}
+function crHeatmapClose() {
+    if (crHeatmapSelected) { crHeatmapSelected.classList.remove('cr-heatmap-selected'); crHeatmapSelected = null; }
+    document.getElementById('cr-heatmap-panel').classList.add('d-none');
+}
 
 /* ── Ordenar tabla de estudiantes ──────────────────────────────────────────── */
 function crSortStudents(th, isNumeric) {
@@ -1330,8 +1387,13 @@ function crSortStudents(th, isNumeric) {
                     : 'background:#f0f2f5;';
                 $color = $intensity > 0.5 ? 'color:#fff;' : '';
               ?>
-              <td style="<?php echo $bg . $color; ?>"
-                  title="<?php echo $daynames[$dow] . ' ' . $timeslots[$b] . ': ' . $val; ?>">
+              <td style="<?php echo $bg . $color . ($val === 0 ? 'cursor:default;' : ''); ?>"
+                  title="<?php echo s($daynames[$dow] . ' ' . $timeslots[$b] . ': ' . $val); ?>"
+                  <?php if ($val > 0): ?>
+                  data-label="<?php echo s($daynames[$dow] . ' ' . $timeslots[$b]); ?>"
+                  data-students="<?php echo s(json_encode($heatstudents[$dow][$b])); ?>"
+                  onclick="crHeatmapClick(this)"
+                  <?php endif; ?>>
                 <?php echo $val > 0 ? $val : ''; ?>
               </td>
               <?php endfor; ?>
@@ -1339,6 +1401,14 @@ function crSortStudents(th, isNumeric) {
             <?php endforeach; ?>
           </tbody>
         </table>
+        <div id="cr-heatmap-panel" class="cr-heatmap-panel mt-3 d-none">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong id="cr-heatmap-panel-title" class="small"></strong>
+            <button type="button" class="btn-close" style="font-size:.7rem;"
+                    onclick="crHeatmapClose()"></button>
+          </div>
+          <div id="cr-heatmap-panel-body" class="d-flex flex-wrap gap-2"></div>
+        </div>
       </div>
     </div>
   </div>
