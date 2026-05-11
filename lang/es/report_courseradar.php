@@ -29,6 +29,7 @@ $string['activityovertime_desc'] = 'Evolución diaria de las interacciones de lo
 $string['activitypattern']     = 'Patrón de actividad (día x hora)';
 $string['activitypattern_desc'] = 'Interacciones agrupadas por día de la semana y franja horaria — muestra cuándo estudian más los alumnos.';
 $string['allstudentsviewed']   = '¡Todos los estudiantes han visto este recurso!';
+$string['adjustperiod']        = 'Ajustar período';
 $string['applyfilter']         = 'Aplicar filtro';
 $string['atrisk']              = 'Alumnos en riesgo';
 $string['atrisk_info']         = 'Alumnos sin interacciones o con muy poca actividad en el período seleccionado.';
