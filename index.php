@@ -216,13 +216,16 @@ if ($totalstudents > 0 && $totalmodules > 0) {
     foreach ($rs as $row) {
         $uid = (int)$row->userid;
         if (isset($students[$uid])) {
-            $heatstudents[(int)$row->dow][(int)$row->timeblock][] = fullname($students[$uid]);
+            $heatstudents[(int)$row->dow][(int)$row->timeblock][] = [
+                'id'   => $uid,
+                'name' => fullname($students[$uid]),
+            ];
         }
     }
     $rs->close();
     foreach ($heatstudents as $d => $blocks) {
-        foreach ($blocks as $b => $names) {
-            sort($heatstudents[$d][$b]);
+        foreach ($blocks as $b => $entries) {
+            usort($heatstudents[$d][$b], fn($a, $b) => strcmp($a['name'], $b['name']));
         }
     }
 
@@ -892,6 +895,7 @@ function crFilterType(btn) {
 
 function crToggleHidden() { crApplyFilters(); crSaveState(); }
 
+var crProfileBase = '<?php echo (new moodle_url('/user/view.php', ['course' => $courseid]))->out(false); ?>';
 var crHeatmapSelected = null;
 function crHeatmapClick(td) {
     var panel = document.getElementById('cr-heatmap-panel');
@@ -910,8 +914,10 @@ function crHeatmapClick(td) {
     var body = document.getElementById('cr-heatmap-panel-body');
     body.innerHTML = students.length === 0
         ? '<span class="text-muted small"><?php echo get_string('nostudents', 'report_courseradar'); ?></span>'
-        : students.map(function(n) {
-            return '<span class="badge bg-light text-dark border">' + n + '</span>';
+        : students.map(function(s) {
+            return '<a href="' + crProfileBase + '&amp;id=' + s.id + '"' +
+                   ' class="badge bg-light text-dark border text-decoration-none">' +
+                   s.name + '</a>';
           }).join('');
     panel.classList.remove('d-none');
     panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
