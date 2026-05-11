@@ -99,7 +99,7 @@ $PAGE->set_heading($course->fullname);
 $modinfo  = get_fast_modinfo($course);
 $validcms = [];
 foreach ($modinfo->get_cms() as $cm) {
-    if (!$cm->deletioninprogress) {
+    if (!$cm->deletioninprogress && $cm->modname !== 'label') {
         $validcms[$cm->id] = $cm;
     }
 }
