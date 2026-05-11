@@ -761,6 +761,13 @@ function crToggleDiv(id) {
     if (!el) { return; }
     el.style.display = el.style.display === 'none' ? '' : 'none';
 }
+function crToggleDateFilter() {
+    var wrap  = document.getElementById('cr-datefilter-wrap');
+    var arrow = document.getElementById('cr-datefilter-arrow');
+    var open  = wrap.style.display === 'none';
+    wrap.style.display = open ? '' : 'none';
+    arrow.textContent  = open ? '▴' : '▾';
+}
 
 /* ── Pestañas principales ──────────────────────────────────────────────────── */
 function crShowTab(tabId) {
@@ -973,38 +980,54 @@ function crSortStudents(th, isNumeric) {
 </div>
 
 <!-- ── Filtro de fechas ──────────────────────────────────────────────────── -->
-<div class="card cr-card mb-4">
-  <div class="card-body py-3">
-    <form method="get" action="" class="row g-2 align-items-end">
-      <input type="hidden" name="id" value="<?php echo $courseid; ?>">
-      <div class="col-sm-4 col-md-3">
-        <label for="cr_datefrom" class="form-label mb-1 small fw-semibold">
-          <?php echo get_string('datefrom', 'report_courseradar'); ?>
-        </label>
-        <input type="date" class="form-control form-control-sm" id="cr_datefrom"
-               name="datefrom" value="<?php echo s($datefromformat); ?>">
-      </div>
-      <div class="col-sm-4 col-md-3">
-        <label for="cr_dateto" class="form-label mb-1 small fw-semibold">
-          <?php echo get_string('dateto', 'report_courseradar'); ?>
-        </label>
-        <input type="date" class="form-control form-control-sm" id="cr_dateto"
-               name="dateto" value="<?php echo s($datetoformat); ?>">
-      </div>
-      <div class="col-sm-4 col-md-2">
-        <button type="submit" class="btn btn-primary btn-sm w-100">
-          <?php echo get_string('applyfilter', 'report_courseradar'); ?>
-        </button>
-      </div>
-      <?php if ($isfiltered): ?>
-      <div class="col-sm-4 col-md-2">
-        <a href="<?php echo (new moodle_url('/report/courseradar/index.php', ['id' => $courseid]))->out(false); ?>"
-           class="btn btn-outline-secondary btn-sm w-100">
-          <?php echo get_string('resetfilter', 'report_courseradar'); ?>
-        </a>
-      </div>
-      <?php endif; ?>
-    </form>
+<div class="d-flex align-items-center justify-content-end mb-3 gap-2">
+  <?php if ($isfiltered): ?>
+  <small class="text-muted">
+    <?php echo s($datefromformat); ?> – <?php echo s($datetoformat); ?>
+  </small>
+  <?php endif; ?>
+  <button type="button"
+          class="btn btn-link btn-sm text-muted text-decoration-none p-0"
+          onclick="crToggleDateFilter()"
+          id="cr-datefilter-toggle">
+    <?php echo get_string('adjustperiod', 'report_courseradar'); ?>
+    <span id="cr-datefilter-arrow"><?php echo $isfiltered ? '▴' : '▾'; ?></span>
+  </button>
+</div>
+<div id="cr-datefilter-wrap" <?php if (!$isfiltered): ?>style="display:none;"<?php endif; ?>>
+  <div class="card cr-card mb-4">
+    <div class="card-body py-3">
+      <form method="get" action="" class="row g-2 align-items-end">
+        <input type="hidden" name="id" value="<?php echo $courseid; ?>">
+        <div class="col-sm-4 col-md-3">
+          <label for="cr_datefrom" class="form-label mb-1 small fw-semibold">
+            <?php echo get_string('datefrom', 'report_courseradar'); ?>
+          </label>
+          <input type="date" class="form-control form-control-sm" id="cr_datefrom"
+                 name="datefrom" value="<?php echo s($datefromformat); ?>">
+        </div>
+        <div class="col-sm-4 col-md-3">
+          <label for="cr_dateto" class="form-label mb-1 small fw-semibold">
+            <?php echo get_string('dateto', 'report_courseradar'); ?>
+          </label>
+          <input type="date" class="form-control form-control-sm" id="cr_dateto"
+                 name="dateto" value="<?php echo s($datetoformat); ?>">
+        </div>
+        <div class="col-sm-4 col-md-2">
+          <button type="submit" class="btn btn-primary btn-sm w-100">
+            <?php echo get_string('applyfilter', 'report_courseradar'); ?>
+          </button>
+        </div>
+        <?php if ($isfiltered): ?>
+        <div class="col-sm-4 col-md-2">
+          <a href="<?php echo (new moodle_url('/report/courseradar/index.php', ['id' => $courseid]))->out(false); ?>"
+             class="btn btn-outline-secondary btn-sm w-100">
+            <?php echo get_string('resetfilter', 'report_courseradar'); ?>
+          </a>
+        </div>
+        <?php endif; ?>
+      </form>
+    </div>
   </div>
 </div>
 

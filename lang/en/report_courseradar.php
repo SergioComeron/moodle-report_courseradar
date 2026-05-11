@@ -29,6 +29,7 @@ $string['activityovertime_desc'] = 'Daily evolution of student interactions in t
 $string['activitypattern']     = 'Activity pattern (day x hour)';
 $string['activitypattern_desc'] = 'Interactions grouped by day of week and time slot — reveals when students are most active.';
 $string['allstudentsviewed']   = 'All students have viewed this!';
+$string['adjustperiod']        = 'Adjust period';
 $string['applyfilter']         = 'Apply filter';
 $string['atrisk']              = 'At-risk students';
 $string['atrisk_info']         = 'Students with no interactions or very low activity in the selected period.';
