@@ -37,41 +37,6 @@ $context = context_course::instance($courseid);
 require_login($course);
 require_capability('report/courseradar:view', $context);
 
-// Handle message-send action (POST from the at-risk form).
-if (optional_param('sendmsg', 0, PARAM_INT)) {
-    require_sesskey();
-    $msgtext = required_param('msgtext', PARAM_TEXT);
-    $uidlist = required_param('uids', PARAM_SEQUENCE);
-    $uidarr  = array_filter(array_map('intval', explode(',', $uidlist)));
-    $allstus = report_courseradar_get_students($context);
-    $sent    = 0;
-    foreach ($uidarr as $tuid) {
-        if (!isset($allstus[$tuid])) {
-            continue;
-        }
-        $msg = new \core\message\message();
-        $msg->component         = 'moodle';
-        $msg->name              = 'instantmessage';
-        $msg->userfrom          = $USER;
-        $msg->userto            = $allstus[$tuid];
-        $msg->subject           = format_string($course->shortname);
-        $msg->fullmessage       = $msgtext;
-        $msg->fullmessageformat = FORMAT_PLAIN;
-        $msg->fullmessagehtml   = '';
-        $msg->smallmessage      = '';
-        $msg->notification      = 0;
-        $msg->courseid          = $courseid;
-        message_send($msg);
-        $sent++;
-    }
-    redirect(
-        new moodle_url('/report/courseradar/index.php', ['id' => $courseid]),
-        get_string('msgsent', 'report_courseradar') . ' (' . $sent . ')',
-        null,
-        \core\output\notification::NOTIFY_SUCCESS
-    );
-}
-
 // Date range.
 $defaultfrom = $course->startdate ?: mktime(0, 0, 0, 1, 1, (int)date('Y'));
 if (!$defaultfrom) {
@@ -508,19 +473,18 @@ foreach ($students as $uid => $stu) {
 }
 
 // Composite engagement score per student (0 = no activity, 100 = fully engaged).
-$riskscores = [];
-foreach ($students as $uid => $stu) {
-    $visited = count($studentlog[$uid] ?? []);
-    $visitpct = ($totalmodules > 0) ? ($visited / $totalmodules) * 100 : 0;
-    $days = $daysinactive[$uid];
-    $recpct = ($days < 0) ? 0.0 : max(0.0, 100.0 - ($days * 100.0 / 30.0));
-    if ($hasanycompletion && $totaltracked > 0) {
-        $complpct = (($completedbystu[$uid] ?? 0) / $totaltracked) * 100;
-        $riskscores[$uid] = min(100, (int)round($visitpct * 0.35 + $recpct * 0.35 + $complpct * 0.30));
-    } else {
-        $riskscores[$uid] = min(100, (int)round($visitpct * 0.50 + $recpct * 0.50));
-    }
-}
+$riskscores = report_courseradar_engagement_scores(
+    $students, $studentlog, $daysinactive, $totalmodules,
+    $hasanycompletion, $totaltracked, $completedbystu
+);
+
+// Score distribution histogram: count students per 20-point band.
+$scorebands = report_courseradar_score_bands($riskscores);
+
+// Scatter plot data: visited %, engagement score, name, profile URL.
+$scatterdata = report_courseradar_scatter_data(
+    $students, $studentlog, $riskscores, $totalmodules, $courseid
+);
 
 // Activity chart data.
 $chartlabels  = [];
@@ -667,11 +631,16 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-spark-empty       { color: #adb5bd; font-size: .8rem; }
 /* Filtro de tipos */
 .cr-type-filter-btn   { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; transition: all .15s; }
+/* Scatter plot */
+.cr-scatter-wrap      { position: relative; }
+#cr-scatter-tip       { position: fixed; pointer-events: none; background: rgba(0,0,0,.78); color: #fff; padding: 5px 10px; border-radius: 6px; font-size: .8rem; line-height: 1.5; white-space: nowrap; display: none; z-index: 9999; }
 </style>
 <script>
 /* ── Estado persistente (localStorage por curso) ───────────────────────────── */
 var crStateKey      = 'cr_state_<?php echo (int)$courseid; ?>';
 var crStateLoading  = false;
+var crScatterData   = <?php echo json_encode($scatterdata, JSON_HEX_TAG | JSON_UNESCAPED_UNICODE) ?: '[]'; ?>;
+var crScoreBands    = <?php echo json_encode(array_values($scorebands), JSON_HEX_TAG) ?: '[0,0,0,0,0]'; ?>;
 
 function crSaveState() {
     if (crStateLoading) { return; }
@@ -756,11 +725,6 @@ function crToggle(btn, rowId) {
     }
 }
 
-function crToggleDiv(id) {
-    var el = document.getElementById(id);
-    if (!el) { return; }
-    el.style.display = el.style.display === 'none' ? '' : 'none';
-}
 function crToggleDateFilter() {
     var wrap  = document.getElementById('cr-datefilter-wrap');
     var arrow = document.getElementById('cr-datefilter-arrow');
@@ -776,6 +740,8 @@ function crShowTab(tabId) {
     document.getElementById(tabId).style.display = '';
     document.querySelector('[data-tab="' + tabId + '"]').classList.add('active');
     crSaveState();
+    if (tabId === 'cr-tab-students') { setTimeout(crDrawScatter, 0); }
+    if (tabId === 'cr-tab-overview') { setTimeout(crDrawScoreDist, 0); }
 }
 
 /* ── Ordenar tabla de recursos ─────────────────────────────────────────────── */
@@ -964,6 +930,171 @@ function crSortStudents(th, isNumeric) {
         if (dr) { tbody.appendChild(dr); }
     });
 }
+
+/* ── Histograma de distribución del score ──────────────────────────────────── */
+function crDrawScoreDist() {
+    var canvas = document.getElementById('cr-scoredist-canvas');
+    if (!canvas) { return; }
+    var dpr = window.devicePixelRatio || 1;
+    var w   = canvas.offsetWidth;
+    var h   = canvas.offsetHeight || 220;
+    if (w === 0) { return; }
+    canvas.width  = w * dpr;
+    canvas.height = h * dpr;
+    var ctx    = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    var labels = ['0–19', '20–39', '40–59', '60–79', '80–100'];
+    var colors = ['#dc3545', '#fd7e14', '#ffc107', '#20c997', '#198754'];
+    var vals   = crScoreBands;
+    var max    = Math.max.apply(null, vals) || 1;
+    var ml = 40, mr = 16, mt = 20, mb = 38;
+    var pw = w - ml - mr, ph = h - mt - mb;
+    var n  = vals.length, gap = 10;
+    var bw = (pw - gap * (n - 1)) / n;
+
+    // Grid lines + Y labels.
+    ctx.lineWidth = 1;
+    for (var g = 0; g <= 4; g++) {
+        var gy = mt + ph - (g / 4) * ph;
+        ctx.strokeStyle = '#e9ecef';
+        ctx.beginPath(); ctx.moveTo(ml, gy); ctx.lineTo(ml + pw, gy); ctx.stroke();
+        ctx.fillStyle = '#6c757d'; ctx.font = '10px system-ui,sans-serif'; ctx.textAlign = 'right';
+        ctx.fillText(Math.round((g / 4) * max), ml - 5, gy + 3);
+    }
+
+    // Bars.
+    vals.forEach(function(v, i) {
+        var bh = ph > 0 ? (v / max) * ph : 0;
+        var bx = ml + i * (bw + gap);
+        var by = mt + ph - bh;
+        ctx.fillStyle   = colors[i];
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.globalAlpha = 1;
+        if (v > 0) {
+            ctx.fillStyle = '#343a40'; ctx.font = 'bold 11px system-ui,sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText(v, bx + bw / 2, by - 5);
+        }
+        ctx.fillStyle = '#6c757d'; ctx.font = '10px system-ui,sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(labels[i], bx + bw / 2, mt + ph + 14);
+    });
+
+    // Axis.
+    ctx.strokeStyle = '#adb5bd'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ml, mt); ctx.lineTo(ml, mt + ph); ctx.lineTo(ml + pw, mt + ph); ctx.stroke();
+}
+
+/* ── Scatter plot: recursos visitados vs. score ────────────────────────────── */
+function crDrawScatter() {
+    var canvas = document.getElementById('cr-scatter-canvas');
+    if (!canvas) { return; }
+    var dpr = window.devicePixelRatio || 1;
+    var w   = canvas.offsetWidth;
+    var h   = canvas.offsetHeight || 320;
+    if (w === 0) { return; }
+    canvas.width  = w * dpr;
+    canvas.height = h * dpr;
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    var ml = 56, mr = 16, mt = 16, mb = 46;
+    var pw = w - ml - mr;
+    var ph = h - mt - mb;
+
+    function toX(v) { return ml + (v / 100) * pw; }
+    function toY(v) { return mt + ph - (v / 100) * ph; }
+
+    // Grid lines.
+    ctx.lineWidth = 1;
+    for (var i = 0; i <= 5; i++) {
+        var v = i * 20;
+        ctx.strokeStyle = '#e9ecef';
+        ctx.beginPath(); ctx.moveTo(ml, toY(v)); ctx.lineTo(ml + pw, toY(v)); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(toX(v), mt); ctx.lineTo(toX(v), mt + ph); ctx.stroke();
+        ctx.fillStyle = '#6c757d';
+        ctx.font = '11px system-ui,sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(v, ml - 6, toY(v) + 4);
+        ctx.textAlign = 'center';
+        ctx.fillText(v + '%', toX(v), mt + ph + 16);
+    }
+
+    // Axes.
+    ctx.strokeStyle = '#adb5bd'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ml, mt); ctx.lineTo(ml, mt + ph); ctx.lineTo(ml + pw, mt + ph); ctx.stroke();
+
+    // Axis labels.
+    ctx.fillStyle = '#495057'; ctx.font = 'bold 11px system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('<?php echo get_string('scatter_xaxis', 'report_courseradar'); ?>', ml + pw / 2, mt + ph + 36);
+    ctx.save();
+    ctx.translate(13, mt + ph / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('<?php echo get_string('scatter_yaxis', 'report_courseradar'); ?>', 0, 0);
+    ctx.restore();
+
+    // Points.
+    crScatterData.forEach(function(d) {
+        var px  = toX(d.x);
+        var py  = toY(d.y);
+        var col = d.y >= 70 ? '#198754' : (d.y >= 40 ? '#fd7e14' : '#dc3545');
+        ctx.beginPath();
+        ctx.arc(px, py, 7, 0, 2 * Math.PI);
+        ctx.globalAlpha = 0.82;
+        ctx.fillStyle   = col;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth   = 1.5;
+        ctx.stroke();
+    });
+}
+
+(function() {
+    function getHit(canvas, ex, ey) {
+        var r  = canvas.getBoundingClientRect();
+        var w  = canvas.offsetWidth;
+        var h  = canvas.offsetHeight || 320;
+        var ml = 56, mr = 16, mt = 16, mb = 46;
+        var pw = w - ml - mr, ph = h - mt - mb;
+        var cx = ex - r.left, cy = ey - r.top;
+        for (var i = 0; i < crScatterData.length; i++) {
+            var d  = crScatterData[i];
+            var px = ml + (d.x / 100) * pw;
+            var py = mt + ph - (d.y / 100) * ph;
+            if (Math.sqrt((cx - px) * (cx - px) + (cy - py) * (cy - py)) <= 9) { return d; }
+        }
+        return null;
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        var canvas = document.getElementById('cr-scatter-canvas');
+        var tip    = document.getElementById('cr-scatter-tip');
+        if (!canvas || !tip) { return; }
+        canvas.addEventListener('mousemove', function(e) {
+            var d = getHit(canvas, e.clientX, e.clientY);
+            if (d) {
+                tip.style.display = 'block';
+                tip.style.left    = (e.clientX + 14) + 'px';
+                tip.style.top     = (e.clientY - 32) + 'px';
+                tip.innerHTML     = '<strong>' + d.name + '</strong><br>' +
+                    '<?php echo get_string('scatter_xaxis', 'report_courseradar'); ?>: ' + d.x + '%<br>' +
+                    '<?php echo get_string('scatter_yaxis', 'report_courseradar'); ?>: ' + d.y;
+                canvas.style.cursor = 'pointer';
+            } else {
+                tip.style.display = 'none';
+                canvas.style.cursor = 'crosshair';
+            }
+        });
+        canvas.addEventListener('mouseleave', function() { tip.style.display = 'none'; });
+        canvas.addEventListener('click', function(e) {
+            var d = getHit(canvas, e.clientX, e.clientY);
+            if (d) { window.location.href = d.url; }
+        });
+        window.addEventListener('resize', function() { crDrawScoreDist(); crDrawScatter(); });
+        crDrawScoreDist();
+    });
+})();
 </script>
 
 <div class="container-fluid px-0">
@@ -1198,80 +1329,22 @@ function crSortStudents(th, isNumeric) {
 
     </div>
 
-    <!-- Formulario de mensaje a alumnos en riesgo -->
-    <div class="mt-3 pt-3 border-top">
-      <button class="btn btn-sm btn-outline-danger"
-              type="button"
-              onclick="crToggleDiv('cr-risk-msgform')">
-        <?php echo $OUTPUT->pix_icon('t/message', '', 'core', ['class' => 'me-1']); ?>
-        <?php echo get_string('notifyrisk', 'report_courseradar'); ?>
-        <span class="badge bg-danger text-white ms-1"><?php echo $totalrisk; ?></span>
-      </button>
-      <div class="mt-3" id="cr-risk-msgform" style="display:none;">
-        <form method="post"
-              action="<?php echo (new moodle_url('/report/courseradar/index.php', ['id' => $courseid]))->out(false); ?>">
-          <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
-          <input type="hidden" name="sendmsg" value="1">
-          <input type="hidden" name="uids"
-                 value="<?php echo s(implode(',', array_merge(array_keys($atrisknone), array_keys($atrisklow)))); ?>">
-          <textarea class="form-control form-control-sm mb-2" name="msgtext" rows="3"
-                    placeholder="<?php echo get_string('notifyrisk_placeholder', 'report_courseradar'); ?>"
-                    required></textarea>
-          <button type="submit" class="btn btn-sm btn-danger">
-            <?php echo $OUTPUT->pix_icon('t/message', '', 'core', ['class' => 'me-1']); ?>
-            <?php echo get_string('sendmsg', 'report_courseradar'); ?>
-          </button>
-        </form>
-      </div>
-    </div>
-
   </div>
 </div>
 <?php endif; ?>
 
-<!-- ── Distribución de engagement ───────────────────────────────────────── -->
-<?php if ($totalstudents > 0 && $totalmodules > 0): ?>
+<!-- ── Histograma de puntuación de participación ─────────────────────────── -->
+<?php if ($totalstudents > 1): ?>
 <div class="card cr-card mb-4">
   <div class="card-header bg-white border-bottom py-3">
     <h5 class="mb-0 fw-bold">
       <?php echo $OUTPUT->pix_icon('i/stats', '', 'core', ['class' => 'me-1']); ?>
-      <?php echo get_string('engdistribution', 'report_courseradar'); ?>
+      <?php echo get_string('scoredist_title', 'report_courseradar'); ?>
     </h5>
-    <small class="text-muted"><?php echo get_string('engdistribution_desc', 'report_courseradar'); ?></small>
+    <small class="text-muted"><?php echo get_string('scoredist_desc', 'report_courseradar'); ?></small>
   </div>
   <div class="card-body">
-    <?php
-      $engbuckets = [
-          ['label' => '75–100%', 'count' => $engdist[75], 'class' => 'bg-success'],
-          ['label' => '50–74%',  'count' => $engdist[50],  'class' => 'bg-info'],
-          ['label' => '25–49%',  'count' => $engdist[25],  'class' => 'bg-warning'],
-          ['label' => '0–24%',   'count' => $engdist[0],   'class' => 'bg-danger'],
-      ];
-    ?>
-    <?php foreach ($engbuckets as $bucket): ?>
-    <div class="d-flex align-items-center mb-2 gap-2">
-      <div style="width:4.5rem;" class="text-end">
-        <small class="text-muted fw-semibold"><?php echo $bucket['label']; ?></small>
-      </div>
-      <div class="flex-grow-1">
-        <?php $bpct = ($totalstudents > 0) ? round(($bucket['count'] / $totalstudents) * 100) : 0; ?>
-        <div class="progress" style="height:18px;">
-          <div class="progress-bar <?php echo $bucket['class']; ?>"
-               role="progressbar"
-               style="width:<?php echo $bpct; ?>%"
-               aria-valuenow="<?php echo $bpct; ?>"
-               aria-valuemin="0" aria-valuemax="100">
-            <?php if ($bpct >= 10): ?><?php echo $bucket['count']; ?><?php endif; ?>
-          </div>
-        </div>
-      </div>
-      <div style="width:2.5rem;">
-        <small class="<?php echo $bucket['count'] === 0 ? 'text-muted' : 'fw-semibold'; ?>">
-          <?php echo $bucket['count']; ?>
-        </small>
-      </div>
-    </div>
-    <?php endforeach; ?>
+    <canvas id="cr-scoredist-canvas" style="display:block;width:100%;height:220px;"></canvas>
   </div>
 </div>
 <?php endif; ?>
@@ -1724,7 +1797,7 @@ function crSortStudents(th, isNumeric) {
                     <h6 class="text-success fw-bold mb-2">
                       <?php echo $OUTPUT->pix_icon('i/valid', '', 'core', ['class' => 'me-1']); ?>
                       <?php echo get_string('haveviewed', 'report_courseradar'); ?>
-                      <span class="badge bg-success ms-1"><?php echo $unique; ?></span>
+                      <span class="badge bg-success text-white ms-1"><?php echo $unique; ?></span>
                     </h6>
                     <?php if ($unique > 0): ?>
                     <div class="cr-seen-list">
@@ -1761,7 +1834,7 @@ function crSortStudents(th, isNumeric) {
                     <h6 class="text-danger fw-bold mb-2">
                       <?php echo $OUTPUT->pix_icon('i/invalid', '', 'core', ['class' => 'me-1']); ?>
                       <?php echo get_string('haventviewed', 'report_courseradar'); ?>
-                      <span class="badge bg-danger ms-1"><?php echo $notseen; ?></span>
+                      <span class="badge bg-danger text-white ms-1"><?php echo $notseen; ?></span>
                     </h6>
                     <?php if ($notseen > 0): ?>
                     <div class="cr-seen-list">
@@ -1806,6 +1879,22 @@ function crSortStudents(th, isNumeric) {
 </div><!-- /cr-tab-resources -->
 
 <div id="cr-tab-students" class="cr-tab-panel" style="display:none;">
+<?php if ($totalstudents > 1): ?>
+<!-- ── Scatter plot: recursos vs. participación ───────────────────────────── -->
+<div class="card cr-card mb-4">
+  <div class="card-header bg-white border-bottom py-3">
+    <h5 class="mb-0 fw-bold">
+      <?php echo $OUTPUT->pix_icon('i/stats', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('scatter_title', 'report_courseradar'); ?>
+    </h5>
+    <small class="text-muted"><?php echo get_string('scatter_desc', 'report_courseradar'); ?></small>
+  </div>
+  <div class="card-body cr-scatter-wrap">
+    <canvas id="cr-scatter-canvas" style="display:block;width:100%;height:320px;cursor:crosshair;"></canvas>
+  </div>
+</div>
+<div id="cr-scatter-tip"></div>
+<?php endif; ?>
 <!-- ── Tabla de actividad por estudiante ─────────────────────────────────── -->
 <div class="card cr-card mb-4">
   <div class="card-header bg-white border-bottom py-3">
