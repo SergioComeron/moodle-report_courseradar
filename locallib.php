@@ -136,6 +136,106 @@ function report_courseradar_inactive_class(int $days): string {
  * @param int   $limit         Maximum number of results to return.
  * @return array Sorted array of ['cm', 'unique', 'unseen', 'pct'] entries.
  */
+/**
+ * Computes the composite engagement score (0–100) for each student.
+ *
+ * The score combines % of resources visited, recency of last access and,
+ * when completion tracking is active, % of tracked activities completed.
+ *
+ * @param array $students       [userid => stdClass]
+ * @param array $studentlog     [userid][cmid] => views
+ * @param array $daysinactive   [userid] => days since last activity (-1 = never)
+ * @param int   $totalmodules   Total course modules
+ * @param bool  $hasanycompletion Whether completion tracking is enabled
+ * @param int   $totaltracked   Total tracked activities (0 if no completion)
+ * @param array $completedbystu [userid] => count of completed activities
+ * @return array [userid => score (int 0–100)]
+ */
+function report_courseradar_engagement_scores(
+    array $students,
+    array $studentlog,
+    array $daysinactive,
+    int $totalmodules,
+    bool $hasanycompletion,
+    int $totaltracked,
+    array $completedbystu
+): array {
+    $scores = [];
+    foreach ($students as $uid => $stu) {
+        $visited  = count($studentlog[$uid] ?? []);
+        $visitpct = ($totalmodules > 0) ? ($visited / $totalmodules) * 100 : 0;
+        $days     = $daysinactive[$uid] ?? -1;
+        $recpct   = ($days < 0) ? 0.0 : max(0.0, 100.0 - ($days * 100.0 / 30.0));
+        if ($hasanycompletion && $totaltracked > 0) {
+            $complpct   = (($completedbystu[$uid] ?? 0) / $totaltracked) * 100;
+            $scores[$uid] = min(100, (int)round($visitpct * 0.35 + $recpct * 0.35 + $complpct * 0.30));
+        } else {
+            $scores[$uid] = min(100, (int)round($visitpct * 0.50 + $recpct * 0.50));
+        }
+    }
+    return $scores;
+}
+
+/**
+ * Counts students per 20-point engagement score band.
+ *
+ * @param array $riskscores [userid => score (0–100)]
+ * @return array [0 => count, 20 => count, 40 => count, 60 => count, 80 => count]
+ */
+function report_courseradar_score_bands(array $riskscores): array {
+    $bands = [0 => 0, 20 => 0, 40 => 0, 60 => 0, 80 => 0];
+    foreach ($riskscores as $score) {
+        $band = min(80, (int)(floor($score / 20) * 20));
+        $bands[$band]++;
+    }
+    return $bands;
+}
+
+/**
+ * Builds the scatter plot dataset for the student comparison chart.
+ *
+ * Each entry contains the % of resources visited (x), the engagement score (y),
+ * the student display name, and a link to their course profile.
+ *
+ * @param array $students    [userid => stdClass]
+ * @param array $studentlog  [userid][cmid] => views
+ * @param array $riskscores  [userid => score]
+ * @param int   $totalmodules
+ * @param int   $courseid
+ * @return array Array of ['x', 'y', 'name', 'url'] per student
+ */
+function report_courseradar_scatter_data(
+    array $students,
+    array $studentlog,
+    array $riskscores,
+    int $totalmodules,
+    int $courseid
+): array {
+    $data = [];
+    foreach ($students as $uid => $stu) {
+        $visited = count($studentlog[$uid] ?? []);
+        $vpct    = ($totalmodules > 0) ? round(($visited / $totalmodules) * 100) : 0;
+        $data[]  = [
+            'x'    => $vpct,
+            'y'    => $riskscores[$uid] ?? 0,
+            'name' => fullname($stu),
+            'url'  => (new moodle_url('/user/view.php', ['id' => $uid, 'course' => $courseid]))->out(false),
+        ];
+    }
+    return $data;
+}
+
+/**
+ * Returns visible course modules sorted by student coverage ascending (least viewed first).
+ *
+ * Modules with 100% coverage are excluded since they need no attention.
+ *
+ * @param array $validcms      Course modules [cmid => cm_info].
+ * @param array $logdata       Aggregate log data [cmid => stdClass{uniqueusers,...}].
+ * @param int   $totalstudents Total number of enrolled students.
+ * @param int   $limit         Maximum number of results to return.
+ * @return array Sorted array of ['cm', 'unique', 'unseen', 'pct'] entries.
+ */
 function report_courseradar_top_unseen(
     array $validcms,
     array $logdata,

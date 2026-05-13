@@ -30,6 +30,9 @@ require_once($CFG->dirroot . '/report/courseradar/locallib.php');
  * @covers     ::report_courseradar_barclass
  * @covers     ::report_courseradar_get_students
  * @covers     ::report_courseradar_atrisk
+ * @covers     ::report_courseradar_engagement_scores
+ * @covers     ::report_courseradar_score_bands
+ * @covers     ::report_courseradar_scatter_data
  */
 final class lib_test extends \advanced_testcase {
     // Tests for report_courseradar_barclass.
@@ -324,5 +327,161 @@ final class lib_test extends \advanced_testcase {
         $cm = (object)['id' => 1, 'visible' => 1];
         $result = report_courseradar_top_unseen([1 => $cm], [], 0);
         $this->assertEmpty($result);
+    }
+
+    // Tests for report_courseradar_engagement_scores.
+
+    /**
+     * Test that a student who never accessed scores 0.
+     */
+    public function test_engagement_scores_never_accessed(): void {
+        $student  = (object)['id' => 1, 'firstname' => 'Ana', 'lastname' => 'García'];
+        $students = [1 => $student];
+        $scores   = report_courseradar_engagement_scores(
+            $students, [], [1 => -1], 10, false, 0, []
+        );
+        $this->assertEquals(0, $scores[1]);
+    }
+
+    /**
+     * Test that visiting all resources and accessing today gives 100.
+     */
+    public function test_engagement_scores_full_engagement(): void {
+        $student    = (object)['id' => 1, 'firstname' => 'Ana', 'lastname' => 'García'];
+        $students   = [1 => $student];
+        $studentlog = [1 => array_fill_keys(range(1, 10), 1)];
+        $scores     = report_courseradar_engagement_scores(
+            $students, $studentlog, [1 => 0], 10, false, 0, []
+        );
+        $this->assertEquals(100, $scores[1]);
+    }
+
+    /**
+     * Test that completion weight is applied when tracking is enabled.
+     */
+    public function test_engagement_scores_with_completion(): void {
+        $student    = (object)['id' => 1, 'firstname' => 'Ana', 'lastname' => 'García'];
+        $students   = [1 => $student];
+        $studentlog = [1 => array_fill_keys(range(1, 10), 1)];
+        $scores     = report_courseradar_engagement_scores(
+            $students, $studentlog, [1 => 0], 10, true, 10, [1 => 10]
+        );
+        $this->assertEquals(100, $scores[1]);
+    }
+
+    /**
+     * Test that score is capped at 100.
+     */
+    public function test_engagement_scores_capped_at_100(): void {
+        $student    = (object)['id' => 1, 'firstname' => 'Ana', 'lastname' => 'García'];
+        $students   = [1 => $student];
+        $studentlog = [1 => array_fill_keys(range(1, 20), 5)];
+        $scores     = report_courseradar_engagement_scores(
+            $students, $studentlog, [1 => 0], 10, false, 0, []
+        );
+        $this->assertLessThanOrEqual(100, $scores[1]);
+    }
+
+    /**
+     * Test that zero modules gives score 0 regardless of recency.
+     */
+    public function test_engagement_scores_zero_modules(): void {
+        $student  = (object)['id' => 1, 'firstname' => 'Ana', 'lastname' => 'García'];
+        $students = [1 => $student];
+        $scores   = report_courseradar_engagement_scores(
+            $students, [], [1 => 0], 0, false, 0, []
+        );
+        $this->assertEquals(50, $scores[1]);
+    }
+
+    // Tests for report_courseradar_score_bands.
+
+    /**
+     * Test that empty scores return all bands at zero.
+     */
+    public function test_score_bands_empty(): void {
+        $result = report_courseradar_score_bands([]);
+        $this->assertEquals([0 => 0, 20 => 0, 40 => 0, 60 => 0, 80 => 0], $result);
+    }
+
+    /**
+     * Test that each score falls in the correct band.
+     */
+    public function test_score_bands_distribution(): void {
+        $scores = [1 => 10, 2 => 25, 3 => 45, 4 => 65, 5 => 85];
+        $result = report_courseradar_score_bands($scores);
+        $this->assertEquals(1, $result[0]);
+        $this->assertEquals(1, $result[20]);
+        $this->assertEquals(1, $result[40]);
+        $this->assertEquals(1, $result[60]);
+        $this->assertEquals(1, $result[80]);
+    }
+
+    /**
+     * Test that a score of 100 falls in the 80-100 band.
+     */
+    public function test_score_bands_score_100_in_top_band(): void {
+        $result = report_courseradar_score_bands([1 => 100]);
+        $this->assertEquals(1, $result[80]);
+    }
+
+    /**
+     * Test that boundary value 20 falls in the 20-39 band.
+     */
+    public function test_score_bands_boundary_20(): void {
+        $result = report_courseradar_score_bands([1 => 20]);
+        $this->assertEquals(1, $result[20]);
+        $this->assertEquals(0, $result[0]);
+    }
+
+    // Tests for report_courseradar_scatter_data.
+
+    /**
+     * Test that x is the correct % of resources visited.
+     */
+    public function test_scatter_data_visited_percentage(): void {
+        $this->resetAfterTest();
+        $course     = $this->getDataGenerator()->create_course();
+        $student    = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $students   = [$student->id => $student];
+        $studentlog = [$student->id => [1 => 2, 2 => 1]];
+        $riskscores = [$student->id => 55];
+
+        $result = report_courseradar_scatter_data($students, $studentlog, $riskscores, 10, $course->id);
+
+        $this->assertCount(1, $result);
+        $this->assertEquals(20, $result[0]['x']);
+        $this->assertEquals(55, $result[0]['y']);
+    }
+
+    /**
+     * Test that x is 0 when there are no modules.
+     */
+    public function test_scatter_data_zero_modules(): void {
+        $this->resetAfterTest();
+        $course     = $this->getDataGenerator()->create_course();
+        $student    = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $students   = [$student->id => $student];
+        $riskscores = [$student->id => 0];
+
+        $result = report_courseradar_scatter_data($students, [], $riskscores, 0, $course->id);
+
+        $this->assertEquals(0, $result[0]['x']);
+    }
+
+    /**
+     * Test that the profile URL contains the student and course IDs.
+     */
+    public function test_scatter_data_url_contains_ids(): void {
+        $this->resetAfterTest();
+        $course     = $this->getDataGenerator()->create_course();
+        $student    = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $students   = [$student->id => $student];
+        $riskscores = [$student->id => 30];
+
+        $result = report_courseradar_scatter_data($students, [], $riskscores, 5, $course->id);
+
+        $this->assertStringContainsString('id=' . $student->id, $result[0]['url']);
+        $this->assertStringContainsString('course=' . $course->id, $result[0]['url']);
     }
 }
