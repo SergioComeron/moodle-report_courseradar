@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.4.0...v1.4.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* one argument per line in multi-line function calls (PSR2) ([a05cb27](https://github.com/SergioComeron/moodle-report_courseradar/commit/a05cb27144ade023c3ac136ec9d5df077bd039a5))
+
 ## [1.4.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.3.2...v1.4.0) (2026-05-13)
 
 
