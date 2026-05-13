@@ -338,7 +338,13 @@ final class lib_test extends \advanced_testcase {
         $student  = (object)['id' => 1, 'firstname' => 'Ana', 'lastname' => 'García'];
         $students = [1 => $student];
         $scores   = report_courseradar_engagement_scores(
-            $students, [], [1 => -1], 10, false, 0, []
+            $students,
+            [],
+            [1 => -1],
+            10,
+            false,
+            0,
+            []
         );
         $this->assertEquals(0, $scores[1]);
     }
@@ -351,7 +357,13 @@ final class lib_test extends \advanced_testcase {
         $students   = [1 => $student];
         $studentlog = [1 => array_fill_keys(range(1, 10), 1)];
         $scores     = report_courseradar_engagement_scores(
-            $students, $studentlog, [1 => 0], 10, false, 0, []
+            $students,
+            $studentlog,
+            [1 => 0],
+            10,
+            false,
+            0,
+            []
         );
         $this->assertEquals(100, $scores[1]);
     }
@@ -364,7 +376,13 @@ final class lib_test extends \advanced_testcase {
         $students   = [1 => $student];
         $studentlog = [1 => array_fill_keys(range(1, 10), 1)];
         $scores     = report_courseradar_engagement_scores(
-            $students, $studentlog, [1 => 0], 10, true, 10, [1 => 10]
+            $students,
+            $studentlog,
+            [1 => 0],
+            10,
+            true,
+            10,
+            [1 => 10]
         );
         $this->assertEquals(100, $scores[1]);
     }
@@ -377,7 +395,13 @@ final class lib_test extends \advanced_testcase {
         $students   = [1 => $student];
         $studentlog = [1 => array_fill_keys(range(1, 20), 5)];
         $scores     = report_courseradar_engagement_scores(
-            $students, $studentlog, [1 => 0], 10, false, 0, []
+            $students,
+            $studentlog,
+            [1 => 0],
+            10,
+            false,
+            0,
+            []
         );
         $this->assertLessThanOrEqual(100, $scores[1]);
     }
@@ -389,7 +413,13 @@ final class lib_test extends \advanced_testcase {
         $student  = (object)['id' => 1, 'firstname' => 'Ana', 'lastname' => 'García'];
         $students = [1 => $student];
         $scores   = report_courseradar_engagement_scores(
-            $students, [], [1 => 0], 0, false, 0, []
+            $students,
+            [],
+            [1 => 0],
+            0,
+            false,
+            0,
+            []
         );
         $this->assertEquals(50, $scores[1]);
     }
