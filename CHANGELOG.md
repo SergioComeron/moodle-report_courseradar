@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.3.2...v1.4.0) (2026-05-13)
+
+
+### Features
+
+* add scatter plot and score distribution histogram ([f49c234](https://github.com/SergioComeron/moodle-report_courseradar/commit/f49c234d06dde1ad7c8f0d751cc73d15166cef89))
+* make heatmap student badges link to their course profile ([2ee01db](https://github.com/SergioComeron/moodle-report_courseradar/commit/2ee01db99d78bbbbd12d6dc3494b67def99ca832))
+* show active students on heatmap cell click ([6fee7e2](https://github.com/SergioComeron/moodle-report_courseradar/commit/6fee7e2094a7eede429a888d5cea9496734b851e))
+
+
+### Bug Fixes
+
+* exclude label modules from all reports ([30f6b19](https://github.com/SergioComeron/moodle-report_courseradar/commit/30f6b19c1d5f8f36f35d0e818b1f4eac81be5c2c))
+
+
+### Code Refactor
+
+* extract engagement score logic to locallib with unit tests ([73e4b98](https://github.com/SergioComeron/moodle-report_courseradar/commit/73e4b9870ca6706653ab8dbe89322f9ce60f3416))
+
 ## [1.3.2](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.3.1...v1.3.2) (2026-05-08)
 
 
