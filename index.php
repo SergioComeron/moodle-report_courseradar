@@ -474,8 +474,13 @@ foreach ($students as $uid => $stu) {
 
 // Composite engagement score per student (0 = no activity, 100 = fully engaged).
 $riskscores = report_courseradar_engagement_scores(
-    $students, $studentlog, $daysinactive, $totalmodules,
-    $hasanycompletion, $totaltracked, $completedbystu
+    $students,
+    $studentlog,
+    $daysinactive,
+    $totalmodules,
+    $hasanycompletion,
+    $totaltracked,
+    $completedbystu
 );
 
 // Score distribution histogram: count students per 20-point band.
@@ -483,7 +488,11 @@ $scorebands = report_courseradar_score_bands($riskscores);
 
 // Scatter plot data: visited %, engagement score, name, profile URL.
 $scatterdata = report_courseradar_scatter_data(
-    $students, $studentlog, $riskscores, $totalmodules, $courseid
+    $students,
+    $studentlog,
+    $riskscores,
+    $totalmodules,
+    $courseid
 );
 
 // Activity chart data.
