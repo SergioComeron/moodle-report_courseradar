@@ -111,7 +111,7 @@ $string['tab_resources']       = 'Resources';
 $string['tab_students']        = 'Students';
 $string['times']               = 'views';
 $string['topunseen']       = 'Least visited resources';
-$string['topunseeninfo']   = 'Visible resources with lowest student coverage (100% excluded).';
+$string['topunseeninfo']   = 'Visible resources with lowest student coverage (100% excluded). Top 10 shown per active filter.';
 $string['totalinteractions']   = 'Total interactions';
 $string['totalresources']      = 'Total resources';
 

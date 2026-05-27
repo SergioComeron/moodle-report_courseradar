@@ -447,7 +447,7 @@ foreach ($students as $uid => $stu) {
 $totalrisk = count($atrisknone) + count($atrisklow);
 
 // Top least-visited resources.
-$topunseen = report_courseradar_top_unseen($validcms, $logdata, $totalstudents);
+$topunseen = report_courseradar_top_unseen($validcms, $logdata, $totalstudents, count($validcms));
 
 // Unique module types present in topunseen (for its filter bar).
 $topunseentypes = [];
@@ -699,13 +699,8 @@ function crLoadState() {
                 b.classList.add('btn-outline-secondary');
             }
         });
-        var tbody = document.querySelector('#cr-topunseen-table tbody');
-        if (tbody) {
-            tbody.querySelectorAll('tr[data-modname]').forEach(function(row) {
-                row.style.display = state.hiddenTopUnseen.indexOf(row.dataset.modname) >= 0 ? 'none' : '';
-            });
-        }
     }
+    crApplyTopUnseenLimit();
 
     crApplyFilters();
     crStateLoading = false;
@@ -790,6 +785,25 @@ function crSortResources(th, isNumeric) {
 function crResetSort() { location.reload(); }
 
 /* ── Filtro de tipos en "Recursos menos visitados" ─────────────────────────── */
+function crApplyTopUnseenLimit() {
+    var hiddenTypes = [];
+    document.querySelectorAll('.cr-topunseen-filter-btn').forEach(function(b) {
+        if (!b.classList.contains('cr-type-active')) { hiddenTypes.push(b.dataset.modname); }
+    });
+    var tbody = document.querySelector('#cr-topunseen-table tbody');
+    if (!tbody) { return; }
+    var visible = 0;
+    tbody.querySelectorAll('tr[data-modname]').forEach(function(row) {
+        var typeHidden = hiddenTypes.indexOf(row.dataset.modname) >= 0;
+        if (!typeHidden && visible < 10) {
+            row.style.display = '';
+            row.querySelector('td').textContent = ++visible;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
 function crFilterTopUnseen(btn, modname) {
     var wasActive = btn.classList.contains('cr-type-active');
     if (wasActive) {
@@ -799,16 +813,7 @@ function crFilterTopUnseen(btn, modname) {
         btn.classList.remove('btn-outline-secondary');
         btn.classList.add('cr-type-active', 'btn-warning');
     }
-
-    var hiddenTypes = [];
-    document.querySelectorAll('.cr-topunseen-filter-btn').forEach(function(b) {
-        if (!b.classList.contains('cr-type-active')) { hiddenTypes.push(b.dataset.modname); }
-    });
-
-    var tbody = document.querySelector('#cr-topunseen-table tbody');
-    tbody.querySelectorAll('tr[data-modname]').forEach(function(row) {
-        row.style.display = hiddenTypes.indexOf(row.dataset.modname) >= 0 ? 'none' : '';
-    });
+    crApplyTopUnseenLimit();
     crSaveState();
 }
 
