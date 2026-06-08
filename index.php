@@ -1121,16 +1121,18 @@ function crDrawScatter() {
       <?php echo get_string('pluginname', 'report_courseradar'); ?>
     </h2>
     <p class="text-muted mb-0 small"><?php echo get_string('plugindesc', 'report_courseradar'); ?></p>
+    <p class="text-muted mb-0 small fw-semibold">
+      <?php echo $OUTPUT->pix_icon('i/calendar', '', 'core', ['class' => 'me-1']); ?>
+      <?php echo get_string('analyzingperiod', 'report_courseradar', (object)[
+          'from' => $datefromformat,
+          'to'   => $datetoformat,
+      ]); ?>
+    </p>
   </div>
 </div>
 
 <!-- ── Filtro de fechas ──────────────────────────────────────────────────── -->
 <div class="d-flex align-items-center justify-content-end mb-3 gap-2">
-  <?php if ($isfiltered): ?>
-  <small class="text-muted">
-    <?php echo s($datefromformat); ?> – <?php echo s($datetoformat); ?>
-  </small>
-  <?php endif; ?>
   <button type="button"
           class="btn btn-link btn-sm text-muted text-decoration-none p-0"
           onclick="crToggleDateFilter()"
