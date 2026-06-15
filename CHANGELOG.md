@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.4.2...v1.4.3) (2026-05-13)
+
+
+### Bug Fixes
+
+* correct lang string ordering (adjustperiod, scatter vs scoredist) ([d2b4cf4](https://github.com/SergioComeron/moodle-report_courseradar/commit/d2b4cf471ffe5900d2ab97d35ff9a8482eccd631))
+
+## [1.4.2](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.4.1...v1.4.2) (2026-05-13)
+
+
+### Bug Fixes
+
+* one argument per line in test function calls (PSR2) ([7dea3de](https://github.com/SergioComeron/moodle-report_courseradar/commit/7dea3de0c0457a73ec1f38b6cf62b11e8428e228))
+
+## [1.4.1](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.4.0...v1.4.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* one argument per line in multi-line function calls (PSR2) ([a05cb27](https://github.com/SergioComeron/moodle-report_courseradar/commit/a05cb27144ade023c3ac136ec9d5df077bd039a5))
+
+## [1.4.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.3.2...v1.4.0) (2026-05-13)
+
+
+### Features
+
+* add scatter plot and score distribution histogram ([f49c234](https://github.com/SergioComeron/moodle-report_courseradar/commit/f49c234d06dde1ad7c8f0d751cc73d15166cef89))
+* make heatmap student badges link to their course profile ([2ee01db](https://github.com/SergioComeron/moodle-report_courseradar/commit/2ee01db99d78bbbbd12d6dc3494b67def99ca832))
+* show active students on heatmap cell click ([6fee7e2](https://github.com/SergioComeron/moodle-report_courseradar/commit/6fee7e2094a7eede429a888d5cea9496734b851e))
+
+
+### Bug Fixes
+
+* exclude label modules from all reports ([30f6b19](https://github.com/SergioComeron/moodle-report_courseradar/commit/30f6b19c1d5f8f36f35d0e818b1f4eac81be5c2c))
+
+
+### Code Refactor
+
+* extract engagement score logic to locallib with unit tests ([73e4b98](https://github.com/SergioComeron/moodle-report_courseradar/commit/73e4b9870ca6706653ab8dbe89322f9ce60f3416))
+
 ## [1.3.2](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.3.1...v1.3.2) (2026-05-08)
 
 
