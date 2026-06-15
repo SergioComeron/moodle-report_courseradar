@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.4.3...v1.5.0) (2026-06-15)
+
+
+### Features
+
+* always show analysed period below the report subtitle ([3ab4689](https://github.com/SergioComeron/moodle-report_courseradar/commit/3ab4689787745a094fea6330c983f8af5571935f))
+
+
+### Bug Fixes
+
+* exclude subsection modules from all reports ([f22900a](https://github.com/SergioComeron/moodle-report_courseradar/commit/f22900a90b641fa7d12cd9e0b5ad26de6ffbf489))
+* top unseen shows real top 10 per type filter, not top 10 overall ([85ce18b](https://github.com/SergioComeron/moodle-report_courseradar/commit/85ce18bcc9a5ba294399d25e49beb424840d7b0d))
+
 ## [1.4.3](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.4.2...v1.4.3) (2026-05-13)
 
 
