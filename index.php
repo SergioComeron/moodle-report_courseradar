@@ -319,7 +319,7 @@ foreach ($students as $uid => $stu) {
         $bars[] = [
             'cnt'    => $cnt,
             'height' => $maxcnt > 0 ? max(3, (int)round(($cnt / $maxcnt) * 100)) : 3,
-            'label'  => date('d M', $w),
+            'label'  => userdate($w, get_string('chartdateformat', 'report_courseradar')),
         ];
     }
     $sparklines[$uid] = $bars;
@@ -514,12 +514,12 @@ if (!empty($byday)) {
         }
         ksort($byweek);
         foreach ($byweek as $wk => $cnt) {
-            $chartlabels[] = date('d M', strtotime($wk));
+            $chartlabels[] = userdate(strtotime($wk), get_string('chartdateformat', 'report_courseradar'));
             $chartvalues[] = $cnt;
         }
     } else {
         for ($d = $datefrom; $d <= $dateto; $d += DAYSECS) {
-            $chartlabels[] = date('d M', $d);
+            $chartlabels[] = userdate($d, get_string('chartdateformat', 'report_courseradar'));
             $chartvalues[] = $byday[date('Y-m-d', $d)] ?? 0;
         }
     }

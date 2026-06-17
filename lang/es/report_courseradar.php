@@ -38,6 +38,7 @@ $string['atrisk_lowactivity']  = 'Participación baja (< 30% recursos visitados)
 $string['atrisk_noactivity']   = 'Sin ninguna interacción';
 $string['avgengagement']       = 'Participación media';
 $string['avgviews'] = 'Media de vistas / módulo';
+$string['chartdateformat']     = '%d %b';
 $string['completednoftrack']   = 'Sin rastreo de finalización';
 $string['completion']          = 'Finalización';
 $string['completion_desc']     = 'Alumnos que lo han completado';

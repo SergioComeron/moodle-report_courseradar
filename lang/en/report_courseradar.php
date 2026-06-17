@@ -38,6 +38,7 @@ $string['atrisk_lowactivity']  = 'Low engagement (< 30% resources visited)';
 $string['atrisk_noactivity']   = 'No interactions';
 $string['avgengagement']       = 'Avg. engagement';
 $string['avgviews'] = 'Avg. views / module';
+$string['chartdateformat']     = '%d %b';
 $string['completednoftrack']   = 'No completion tracking';
 $string['completion']          = 'Completion';
 $string['completion_desc']     = 'Students who completed it';
