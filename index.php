@@ -627,6 +627,14 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-heatmap td        { border-radius: 4px; padding: 5px 4px; text-align: center; min-width: 36px; cursor: pointer; }
 .cr-heatmap td.cr-heatmap-selected { outline: 2px solid #0d6efd; outline-offset: -2px; }
 .cr-heatmap-panel     { border: 1px solid #dee2e6; border-radius: 8px; padding: .75rem 1rem; background: #f8f9fa; }
+/* Fila de gráficos: apila las dos tarjetas según el ancho REAL disponible
+   (container query), no el viewport. Así, al abrir el drawer derecho de
+   bloques el contenido se estrecha y las tarjetas pasan a una sola columna
+   en vez de solaparse. */
+.cr-charts-row        { container-type: inline-size; }
+@container (max-width: 1199px) {
+  .cr-charts-row > [class*="col-xl-"] { flex: 0 0 100%; max-width: 100%; }
+}
 /* Ordenación */
 .cr-th-sort           { cursor: pointer; user-select: none; white-space: nowrap; }
 .cr-th-sort::after    { content: ' ⇅'; opacity: .35; font-size: .75em; }
@@ -1109,6 +1117,14 @@ function crDrawScatter() {
         crDrawScoreDist();
     });
 })();
+/* Al abrir/cerrar el drawer derecho de bloques el ancho del contenido cambia,
+   pero Chart.js no se entera. Forzamos un resize tras la transición (0.2s)
+   para que el gráfico de actividad se redibuje al nuevo ancho. */
+['theme_boost/drawers:shown', 'theme_boost/drawers:hidden'].forEach(function(ev) {
+    document.addEventListener(ev, function() {
+        setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 250);
+    });
+});
 </script>
 
 <div class="container-fluid px-0">
@@ -1449,7 +1465,7 @@ function crDrawScatter() {
 
 <!-- ── Gráfico de actividad + Heatmap ───────────────────────────────────── -->
 <?php if (!empty($chartvalues) || array_sum(array_map('array_sum', $heatmap)) > 0): ?>
-<div class="row g-3 mb-4">
+<div class="row g-3 mb-4 cr-charts-row">
 
   <!-- Gráfico temporal -->
   <?php if (!empty($chartvalues)): ?>
