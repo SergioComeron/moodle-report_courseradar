@@ -1403,7 +1403,7 @@ function crDrawScatter() {
             class="btn btn-sm btn-warning cr-topunseen-filter-btn cr-type-active cr-badge-mod me-2 mb-1"
             data-modname="<?php echo s($mod); ?>"
             onclick="crFilterTopUnseen(this,'<?php echo s($mod); ?>')">
-      <?php echo s($mod); ?>
+      <?php echo get_string('modulename', $mod); ?>
     </button>
     <?php endforeach; ?>
   </div>
@@ -1574,7 +1574,7 @@ function crDrawScatter() {
     ?>
     <div class="d-flex align-items-center mb-2 gap-2">
       <div style="width:90px; flex-shrink:0; text-align:right;">
-        <span class="badge bg-light text-dark border cr-badge-mod"><?php echo $mod; ?></span>
+        <span class="badge bg-light text-dark border cr-badge-mod"><?php echo get_string('modulename', $mod); ?></span>
       </div>
       <div class="flex-grow-1">
         <div class="progress" style="height:22px;">
@@ -1633,7 +1633,7 @@ function crDrawScatter() {
             class="btn btn-sm btn-primary cr-type-filter-btn cr-type-active cr-badge-mod me-2 mb-1"
             data-modname="<?php echo s($mod); ?>"
             onclick="crFilterType(this)">
-      <?php echo s($mod); ?>
+      <?php echo get_string('modulename', $mod); ?>
     </button>
     <?php endforeach; ?>
   </div>
@@ -1755,8 +1755,8 @@ function crDrawScatter() {
             </td>
 
             <!-- Tipo -->
-            <td data-sort="<?php echo s($cm->modname); ?>">
-              <span class="badge bg-light text-dark border cr-badge-mod"><?php echo $cm->modname; ?></span>
+            <td data-sort="<?php echo s(get_string('modulename', $cm->modname)); ?>">
+              <span class="badge bg-light text-dark border cr-badge-mod"><?php echo get_string('modulename', $cm->modname); ?></span>
             </td>
 
             <!-- Vistas totales -->
