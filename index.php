@@ -650,6 +650,9 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-type-filter-btn   { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; transition: all .15s; }
 /* Scatter plot */
 .cr-scatter-wrap      { position: relative; }
+.cr-score-help summary { cursor: pointer; color: #0d6efd; font-size: .85rem; font-weight: 600; }
+.cr-score-formula     { background: #f0f2f5; border-radius: 6px; padding: .5rem .75rem; }
+.cr-score-formula code { color: #212529; font-size: .85rem; }
 #cr-scatter-tip       { position: fixed; pointer-events: none; background: rgba(0,0,0,.78); color: #fff; padding: 5px 10px; border-radius: 6px; font-size: .8rem; line-height: 1.5; white-space: nowrap; display: none; z-index: 9999; }
 </style>
 <script>
@@ -1923,6 +1926,25 @@ function crDrawScatter() {
   </div>
   <div class="card-body cr-scatter-wrap">
     <canvas id="cr-scatter-canvas" style="display:block;width:100%;height:320px;cursor:crosshair;"></canvas>
+    <details class="cr-score-help mt-3">
+      <summary><?php echo get_string('scorehelp_title', 'report_courseradar'); ?></summary>
+      <div class="small text-muted mt-2">
+        <p class="mb-2"><?php echo get_string('scorehelp_factors', 'report_courseradar'); ?></p>
+        <ul class="mb-2 ps-3">
+          <li><?php echo get_string('scorehelp_resources', 'report_courseradar'); ?></li>
+          <li><?php echo get_string('scorehelp_recency', 'report_courseradar'); ?></li>
+          <?php if ($hasanycompletion && $totaltracked > 0): ?>
+          <li><?php echo get_string('scorehelp_completion', 'report_courseradar'); ?></li>
+          <?php endif; ?>
+        </ul>
+        <div class="cr-score-formula">
+          <span class="fw-semibold"><?php echo get_string('scorehelp_formula', 'report_courseradar'); ?>:</span>
+          <code><?php echo ($hasanycompletion && $totaltracked > 0)
+              ? get_string('scorehelp_formula_full', 'report_courseradar')
+              : get_string('scorehelp_formula_basic', 'report_courseradar'); ?></code>
+        </div>
+      </div>
+    </details>
   </div>
 </div>
 <div id="cr-scatter-tip"></div>
