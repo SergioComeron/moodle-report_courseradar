@@ -1,0 +1,241 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template report_courseradar/student_view
+
+    Personal activity dashboard shown to enrolled students.
+
+    Context variables required for this template:
+    * coursename string Course full name.
+    * score int Engagement score 0-100.
+    * scoreclass string Bootstrap bg- class for the score.
+    * coverage int Percentage of resources visited.
+    * coverageclass string Bootstrap bg- class for the coverage.
+    * completion int Percentage of tracked activities completed.
+    * hascompletion bool Whether completion tracking is active.
+    * daysinactive string Days since last access (or "never" text).
+    * classscore int Class average engagement score.
+    * classcoverage int Class average coverage.
+    * classcompletion int Class average completion.
+    * scoreabove bool Whether my score is at or above the class average.
+    * coverageabove bool Whether my coverage is at or above the class average.
+    * completionabove bool Whether my completion is at or above the class average.
+    * pending array List of {name, url, icon, type} pending resources.
+    * haspending bool Whether there are pending resources.
+    * pendingcount int Number of pending resources.
+    * allvisited bool Whether every available resource was opened.
+    * charthtml string Rendered activity chart HTML.
+    * haschart bool Whether there is a chart to show.
+
+    Example context (json):
+    {
+        "coursename": "Maths 101",
+        "score": 72, "scoreclass": "bg-success",
+        "coverage": 64, "coverageclass": "bg-warning",
+        "completion": 50, "hascompletion": true,
+        "daysinactive": 2,
+        "classscore": 58, "classcoverage": 55, "classcompletion": 41,
+        "scoreabove": true, "coverageabove": true, "completionabove": true,
+        "pending": [{"name": "Topic 3 quiz", "url": "#", "icon": "", "type": "Quiz"}],
+        "haspending": true, "pendingcount": 1, "allvisited": false,
+        "charthtml": "", "haschart": false
+    }
+}}
+<div class="cr-student">
+
+  <p class="text-muted mb-4">{{#str}}studentintro, report_courseradar{{/str}}</p>
+
+  {{! KPI cards }}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+      <div class="card cr-card h-100 text-center">
+        <div class="card-body">
+          <div class="cr-stat {{scoretextclass}}">{{score}}</div>
+          <div class="cr-stat-label">{{#str}}riskscore, report_courseradar{{/str}}</div>
+          <div class="small text-muted">{{#str}}riskscore_desc, report_courseradar{{/str}}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card cr-card h-100 text-center">
+        <div class="card-body">
+          <div class="cr-stat">{{coverage}}%</div>
+          <div class="cr-stat-label">{{#str}}resourcesvisited, report_courseradar{{/str}}</div>
+          <div class="small text-muted">{{#str}}studentcoverage_desc, report_courseradar{{/str}}</div>
+        </div>
+      </div>
+    </div>
+    {{#hascompletion}}
+    <div class="col-6 col-lg-3">
+      <div class="card cr-card h-100 text-center">
+        <div class="card-body">
+          <div class="cr-stat">{{completion}}%</div>
+          <div class="cr-stat-label">{{#str}}completionstu, report_courseradar{{/str}}</div>
+          <div class="small text-muted">{{#str}}completionstu_desc, report_courseradar{{/str}}</div>
+        </div>
+      </div>
+    </div>
+    {{/hascompletion}}
+    <div class="col-6 col-lg-3">
+      <div class="card cr-card h-100 text-center">
+        <div class="card-body">
+          <div class="cr-stat">{{daysinactive}}</div>
+          <div class="cr-stat-label">{{#str}}daysinactive, report_courseradar{{/str}}</div>
+          <div class="small text-muted">{{#str}}daysinactive_desc, report_courseradar{{/str}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {{! Comparison with the class average }}
+  <div class="card cr-card mb-4">
+    <div class="card-header bg-white border-bottom py-3">
+      <h5 class="mb-0 fw-bold">{{#str}}compareclass, report_courseradar{{/str}}</h5>
+      <small class="text-muted">{{#str}}compareclass_desc, report_courseradar{{/str}}</small>
+    </div>
+    <div class="card-body">
+      <div class="mb-3">
+        <div class="d-flex justify-content-between mb-1">
+          <span class="fw-semibold">{{#str}}riskscore, report_courseradar{{/str}}</span>
+          <span>
+            <span class="badge {{#scoreabove}}bg-success{{/scoreabove}}{{^scoreabove}}bg-secondary{{/scoreabove}} text-white">
+              {{#scoreabove}}{{#str}}aboveaverage, report_courseradar{{/str}}{{/scoreabove}}
+              {{^scoreabove}}{{#str}}belowaverage, report_courseradar{{/str}}{{/scoreabove}}
+            </span>
+          </span>
+        </div>
+        <div class="progress cr-cmp-progress">
+          <div class="progress-bar {{scoreclass}}" role="progressbar" style="width: {{score}}%;">
+            {{#str}}you, report_courseradar{{/str}}: {{score}}
+          </div>
+        </div>
+        <div class="progress cr-cmp-progress mt-1">
+          <div class="progress-bar bg-secondary" role="progressbar" style="width: {{classscore}}%;">
+            {{#str}}classaverage, report_courseradar{{/str}}: {{classscore}}
+          </div>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <div class="d-flex justify-content-between mb-1">
+          <span class="fw-semibold">{{#str}}resourcesvisited, report_courseradar{{/str}}</span>
+          <span>
+            <span class="badge {{#coverageabove}}bg-success{{/coverageabove}}{{^coverageabove}}bg-secondary{{/coverageabove}} text-white">
+              {{#coverageabove}}{{#str}}aboveaverage, report_courseradar{{/str}}{{/coverageabove}}
+              {{^coverageabove}}{{#str}}belowaverage, report_courseradar{{/str}}{{/coverageabove}}
+            </span>
+          </span>
+        </div>
+        <div class="progress cr-cmp-progress">
+          <div class="progress-bar {{coverageclass}}" role="progressbar" style="width: {{coverage}}%;">
+            {{#str}}you, report_courseradar{{/str}}: {{coverage}}%
+          </div>
+        </div>
+        <div class="progress cr-cmp-progress mt-1">
+          <div class="progress-bar bg-secondary" role="progressbar" style="width: {{classcoverage}}%;">
+            {{#str}}classaverage, report_courseradar{{/str}}: {{classcoverage}}%
+          </div>
+        </div>
+      </div>
+
+      {{#hascompletion}}
+      <div>
+        <div class="d-flex justify-content-between mb-1">
+          <span class="fw-semibold">{{#str}}completionstu, report_courseradar{{/str}}</span>
+          <span>
+            <span class="badge {{#completionabove}}bg-success{{/completionabove}}{{^completionabove}}bg-secondary{{/completionabove}} text-white">
+              {{#completionabove}}{{#str}}aboveaverage, report_courseradar{{/str}}{{/completionabove}}
+              {{^completionabove}}{{#str}}belowaverage, report_courseradar{{/str}}{{/completionabove}}
+            </span>
+          </span>
+        </div>
+        <div class="progress cr-cmp-progress">
+          <div class="progress-bar bg-info" role="progressbar" style="width: {{completion}}%;">
+            {{#str}}you, report_courseradar{{/str}}: {{completion}}%
+          </div>
+        </div>
+        <div class="progress cr-cmp-progress mt-1">
+          <div class="progress-bar bg-secondary" role="progressbar" style="width: {{classcompletion}}%;">
+            {{#str}}classaverage, report_courseradar{{/str}}: {{classcompletion}}%
+          </div>
+        </div>
+      </div>
+      {{/hascompletion}}
+    </div>
+  </div>
+
+  <div class="row g-3">
+    {{! Pending resources }}
+    <div class="col-lg-6">
+      <div class="card cr-card h-100">
+        <div class="card-header bg-white border-bottom py-3">
+          <h5 class="mb-0 fw-bold">
+            {{#str}}pendingresources, report_courseradar{{/str}}
+            {{#haspending}}<span class="badge bg-danger text-white ms-1">{{pendingcount}}</span>{{/haspending}}
+          </h5>
+          <small class="text-muted">{{#str}}pendingresources_desc, report_courseradar{{/str}}</small>
+        </div>
+        <div class="card-body">
+          {{#allvisited}}
+            <div class="text-success fw-semibold">
+              <i class="fa fa-check-circle me-1"></i>{{#str}}allvisited, report_courseradar{{/str}}
+            </div>
+          {{/allvisited}}
+          {{#haspending}}
+          <ul class="list-group list-group-flush">
+            {{#pending}}
+            <li class="list-group-item d-flex align-items-center px-0">
+              <img src="{{icon}}" alt="" class="cr-mod-icon me-2">
+              <a href="{{url}}" class="text-truncate">{{name}}</a>
+              <span class="badge bg-light text-muted ms-auto">{{type}}</span>
+            </li>
+            {{/pending}}
+          </ul>
+          {{/haspending}}
+        </div>
+      </div>
+    </div>
+
+    {{! Activity over time }}
+    <div class="col-lg-6">
+      <div class="card cr-card h-100">
+        <div class="card-header bg-white border-bottom py-3">
+          <h5 class="mb-0 fw-bold">{{#str}}activityovertime, report_courseradar{{/str}}</h5>
+          <small class="text-muted">{{#str}}myactivity_desc, report_courseradar{{/str}}</small>
+        </div>
+        <div class="card-body">
+          {{#haschart}}{{{charthtml}}}{{/haschart}}
+          {{^haschart}}<p class="text-muted mb-0">{{#str}}noactivitydata, report_courseradar{{/str}}</p>{{/haschart}}
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<style>
+.cr-student .cr-stat        { font-size: 2rem; font-weight: 700; line-height: 1.1; }
+.cr-student .cr-stat-label  { font-size: .9rem; font-weight: 600; margin-top: .25rem; }
+.cr-student .cr-card        { border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.cr-student .cr-cmp-progress { height: 22px; border-radius: 6px; }
+.cr-student .cr-cmp-progress .progress-bar { font-size: .8rem; font-weight: 600; }
+.cr-student .cr-mod-icon    { width: 20px; height: 20px; }
+/* Keep the activity chart inside its card on narrow columns. */
+.cr-student .chart-area     { max-width: 100%; }
+.cr-student .chart-image    { position: relative; width: 100%; }
+.cr-student .chart-image canvas { max-width: 100% !important; height: auto !important; }
+</style>

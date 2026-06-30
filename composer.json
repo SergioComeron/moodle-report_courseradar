@@ -1,0 +1,12 @@
+{
+    "name": "sergiocomeron/moodle-report_courseradar",
+    "description": "Moodle Course Radar report - dev dependencies",
+    "require-dev": {
+        "moodlehq/moodle-cs": "*"
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    }
+}

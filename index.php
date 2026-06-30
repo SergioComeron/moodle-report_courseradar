@@ -35,7 +35,16 @@ $course  = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
 $context = context_course::instance($courseid);
 
 require_login($course);
-require_capability('report/courseradar:view', $context);
+
+// Teachers/managers (with the view capability) see the full report. Enrolled
+// students — and teachers previewing via "Switch role to → Student" — see their
+// personal self-view. Anyone else is denied access.
+$canviewreport = has_capability('report/courseradar:view', $context);
+$isstudentview = !$canviewreport
+    && (is_enrolled($context, $USER, '', true) || is_role_switched($courseid));
+if (!$canviewreport && !$isstudentview) {
+    require_capability('report/courseradar:view', $context);
+}
 
 // Date range.
 $defaultfrom = $course->startdate ?: mktime(0, 0, 0, 1, 1, (int)date('Y'));
@@ -74,6 +83,227 @@ $totalmodules = count($validcms);
 $students      = report_courseradar_get_students($context);
 $totalstudents = count($students);
 $studentids    = array_keys($students);
+
+// Student self-view.
+// Enrolled students (without the view capability) see their own personal
+// metrics for the whole course, plus an anonymous comparison with the class
+// average. No date filter is applied: data covers the entire course history.
+if ($isstudentview) {
+    $myid = (int)$USER->id;
+
+    // Per-student per-module views and last access (whole course, no date range).
+    $studentlog   = []; // Keyed [uid][cmid] => view count.
+    $lastaccessby = []; // Keyed [uid] => last module-view timestamp.
+    $myday        = []; // Keyed [Y-m-d] => count of my own daily interactions.
+
+    if ($totalstudents > 0 && $totalmodules > 0) {
+        [$insql, $inparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'st');
+        $baseparams = array_merge([
+            'courseid'     => $courseid,
+            'action'       => 'viewed',
+            'contextlevel' => CONTEXT_MODULE,
+        ], $inparams);
+
+        $sql = "SELECT contextinstanceid AS cmid, userid,
+                       COUNT(*) AS views, MAX(timecreated) AS lastaccess
+                  FROM {logstore_standard_log}
+                 WHERE courseid     = :courseid
+                   AND action       = :action
+                   AND contextlevel = :contextlevel
+                   AND userid {$insql}
+                 GROUP BY contextinstanceid, userid";
+        $rs = $DB->get_recordset_sql($sql, $baseparams);
+        foreach ($rs as $row) {
+            $studentlog[$row->userid][$row->cmid] = (int)$row->views;
+            $la = (int)$row->lastaccess;
+            if (!isset($lastaccessby[$row->userid]) || $la > $lastaccessby[$row->userid]) {
+                $lastaccessby[$row->userid] = $la;
+            }
+        }
+        $rs->close();
+
+        // My own daily activity across the whole course.
+        $sqlday = "SELECT (timecreated / 86400) * 86400 AS dayts, COUNT(*) AS cnt
+                     FROM {logstore_standard_log}
+                    WHERE courseid     = :courseid
+                      AND action       = :action
+                      AND contextlevel = :contextlevel
+                      AND userid       = :myid
+                    GROUP BY timecreated / 86400
+                    ORDER BY dayts";
+        $rs = $DB->get_recordset_sql($sqlday, [
+            'courseid'     => $courseid,
+            'action'       => 'viewed',
+            'contextlevel' => CONTEXT_MODULE,
+            'myid'         => $myid,
+        ]);
+        foreach ($rs as $row) {
+            $myday[date('Y-m-d', (int)$row->dayts)] = (int)$row->cnt;
+        }
+        $rs->close();
+    }
+
+    // Days since last access, per student.
+    $daysinactive = [];
+    foreach ($students as $uid => $stu) {
+        $daysinactive[$uid] = report_courseradar_days_inactive($lastaccessby[$uid] ?? 0);
+    }
+
+    // Completion (whole course).
+    $completionenabled = !empty($course->enablecompletion);
+    $hasanycompletion  = false;
+    $totaltracked      = 0;
+    if ($completionenabled) {
+        foreach ($validcms as $cm) {
+            if ($cm->completion > 0) {
+                $hasanycompletion = true;
+                $totaltracked++;
+            }
+        }
+    }
+    $completedbystu  = []; // Keyed [uid] => completed tracked activities.
+    $mycompletedcms  = []; // Keyed [cmid] => true for tracked activities I completed.
+    if ($hasanycompletion && $totalstudents > 0) {
+        [$cminsql, $cminp]   = $DB->get_in_or_equal(array_keys($validcms), SQL_PARAMS_NAMED, 'cm');
+        [$stcinsql, $stcinp] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'stc');
+        $rs = $DB->get_recordset_sql(
+            "SELECT coursemoduleid AS cmid, userid, completionstate
+               FROM {course_modules_completion}
+              WHERE coursemoduleid {$cminsql} AND userid {$stcinsql} AND completionstate > 0",
+            array_merge($cminp, $stcinp)
+        );
+        foreach ($rs as $row) {
+            if (isset($validcms[$row->cmid]) && $validcms[$row->cmid]->completion > 0) {
+                $completedbystu[$row->userid] = ($completedbystu[$row->userid] ?? 0) + 1;
+                if ((int)$row->userid === $myid) {
+                    $mycompletedcms[(int)$row->cmid] = true;
+                }
+            }
+        }
+        $rs->close();
+    }
+
+    // Engagement scores for all students (drives my score and the class average).
+    $riskscores = report_courseradar_engagement_scores(
+        $students,
+        $studentlog,
+        $daysinactive,
+        $totalmodules,
+        $hasanycompletion,
+        $totaltracked,
+        $completedbystu
+    );
+
+    // My own metrics.
+    $myvisited    = count($studentlog[$myid] ?? []);
+    $mycoverage   = ($totalmodules > 0) ? (int)round(($myvisited / $totalmodules) * 100) : 0;
+    $myscore      = $riskscores[$myid] ?? 0;
+    $mydaysraw    = $daysinactive[$myid] ?? -1;
+    $mycompletion = ($hasanycompletion && $totaltracked > 0)
+        ? (int)round((count($mycompletedcms) / $totaltracked) * 100)
+        : 0;
+
+    // Class averages (anonymous aggregates).
+    $clsscore = $riskscores ? (int)round(array_sum($riskscores) / count($riskscores)) : 0;
+    $covsum   = 0.0;
+    $compsum  = 0.0;
+    foreach ($students as $uid => $stu) {
+        if ($totalmodules > 0) {
+            $covsum += (count($studentlog[$uid] ?? []) / $totalmodules) * 100;
+        }
+        if ($hasanycompletion && $totaltracked > 0) {
+            $compsum += (($completedbystu[$uid] ?? 0) / $totaltracked) * 100;
+        }
+    }
+    $clscoverage   = $totalstudents > 0 ? (int)round($covsum / $totalstudents) : 0;
+    $clscompletion = $totalstudents > 0 ? (int)round($compsum / $totalstudents) : 0;
+
+    // Pending resources: visible to me, not yet visited, with a viewable URL.
+    $myvisitedcms = $studentlog[$myid] ?? [];
+    $pending      = [];
+    foreach ($validcms as $cmid => $cm) {
+        if (!$cm->uservisible || isset($myvisitedcms[$cmid]) || empty($cm->url)) {
+            continue;
+        }
+        $pending[] = [
+            'name' => $cm->get_formatted_name(),
+            'url'  => $cm->url->out(false),
+            'icon' => $cm->get_icon_url()->out(false),
+            'type' => get_string('pluginname', $cm->modname),
+        ];
+    }
+
+    // My activity-over-time chart (daily, or weekly when the span exceeds 90 days).
+    $stuchart = null;
+    if (!empty($myday)) {
+        $chfrom = $course->startdate ?: strtotime((string)min(array_keys($myday)));
+        $chto   = time();
+        $stulabels = [];
+        $stuvalues = [];
+        $stuweekly = (($chto - $chfrom) / DAYSECS) > 90;
+        if ($stuweekly) {
+            $byweek = [];
+            foreach ($myday as $day => $cnt) {
+                $ts    = strtotime($day);
+                $monds = $ts - ((int)date('N', $ts) - 1) * 86400;
+                $wk    = date('Y-m-d', $monds);
+                $byweek[$wk] = ($byweek[$wk] ?? 0) + $cnt;
+            }
+            ksort($byweek);
+            foreach ($byweek as $wk => $cnt) {
+                $stulabels[] = userdate(strtotime($wk), get_string('chartdateformat', 'report_courseradar'));
+                $stuvalues[] = $cnt;
+            }
+        } else {
+            for ($d = $chfrom; $d <= $chto; $d += DAYSECS) {
+                $stulabels[] = userdate($d, get_string('chartdateformat', 'report_courseradar'));
+                $stuvalues[] = $myday[date('Y-m-d', $d)] ?? 0;
+            }
+        }
+        if (!empty($stuvalues)) {
+            $stuchart = new \core\chart_line();
+            $stuchart->set_smooth(true);
+            $stuchart->add_series(new \core\chart_series(
+                get_string('totalinteractions', 'report_courseradar'),
+                $stuvalues
+            ));
+            $stuchart->set_labels($stulabels);
+        }
+    }
+
+    $mydaystext = ($mydaysraw < 0)
+        ? get_string('neveraccessed', 'report_courseradar')
+        : $mydaysraw;
+
+    $templatecontext = [
+        'coursename'    => format_string($course->fullname),
+        'score'         => $myscore,
+        'scoreclass'    => report_courseradar_barclass($myscore),
+        'scoretextclass' => str_replace('bg-', 'text-', report_courseradar_barclass($myscore)),
+        'coverage'      => $mycoverage,
+        'coverageclass' => report_courseradar_barclass($mycoverage),
+        'completion'    => $mycompletion,
+        'hascompletion' => $hasanycompletion,
+        'daysinactive'  => $mydaystext,
+        'classscore'    => $clsscore,
+        'classcoverage' => $clscoverage,
+        'classcompletion' => $clscompletion,
+        'scoreabove'    => $myscore >= $clsscore,
+        'coverageabove' => $mycoverage >= $clscoverage,
+        'completionabove' => $mycompletion >= $clscompletion,
+        'pending'       => $pending,
+        'haspending'    => !empty($pending),
+        'pendingcount'  => count($pending),
+        'allvisited'    => empty($pending) && $totalmodules > 0,
+        'charthtml'     => $stuchart ? $OUTPUT->render($stuchart) : '',
+        'haschart'      => (bool)$stuchart,
+    ];
+
+    echo $OUTPUT->header();
+    echo $OUTPUT->render_from_template('report_courseradar/student_view', $templatecontext);
+    echo $OUTPUT->footer();
+    exit;
+}
 
 // Log queries.
 $logdata    = []; // Keyed by cmid: totalviews, uniqueusers, lastaccess.
@@ -319,7 +549,7 @@ foreach ($students as $uid => $stu) {
         $bars[] = [
             'cnt'    => $cnt,
             'height' => $maxcnt > 0 ? max(3, (int)round(($cnt / $maxcnt) * 100)) : 3,
-            'label'  => date('d M', $w),
+            'label'  => userdate($w, get_string('chartdateformat', 'report_courseradar')),
         ];
     }
     $sparklines[$uid] = $bars;
@@ -514,12 +744,12 @@ if (!empty($byday)) {
         }
         ksort($byweek);
         foreach ($byweek as $wk => $cnt) {
-            $chartlabels[] = date('d M', strtotime($wk));
+            $chartlabels[] = userdate(strtotime($wk), get_string('chartdateformat', 'report_courseradar'));
             $chartvalues[] = $cnt;
         }
     } else {
         for ($d = $datefrom; $d <= $dateto; $d += DAYSECS) {
-            $chartlabels[] = date('d M', $d);
+            $chartlabels[] = userdate($d, get_string('chartdateformat', 'report_courseradar'));
             $chartvalues[] = $byday[date('Y-m-d', $d)] ?? 0;
         }
     }
@@ -627,6 +857,14 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-heatmap td        { border-radius: 4px; padding: 5px 4px; text-align: center; min-width: 36px; cursor: pointer; }
 .cr-heatmap td.cr-heatmap-selected { outline: 2px solid #0d6efd; outline-offset: -2px; }
 .cr-heatmap-panel     { border: 1px solid #dee2e6; border-radius: 8px; padding: .75rem 1rem; background: #f8f9fa; }
+/* Fila de gráficos: apila las dos tarjetas según el ancho REAL disponible
+   (container query), no el viewport. Así, al abrir el drawer derecho de
+   bloques el contenido se estrecha y las tarjetas pasan a una sola columna
+   en vez de solaparse. */
+.cr-charts-row        { container-type: inline-size; }
+@container (max-width: 1199px) {
+  .cr-charts-row > [class*="col-xl-"] { flex: 0 0 100%; max-width: 100%; }
+}
 /* Ordenación */
 .cr-th-sort           { cursor: pointer; user-select: none; white-space: nowrap; }
 .cr-th-sort::after    { content: ' ⇅'; opacity: .35; font-size: .75em; }
@@ -642,6 +880,9 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-type-filter-btn   { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; transition: all .15s; }
 /* Scatter plot */
 .cr-scatter-wrap      { position: relative; }
+.cr-score-help summary { cursor: pointer; color: #0d6efd; font-size: .85rem; font-weight: 600; }
+.cr-score-formula     { background: #f0f2f5; border-radius: 6px; padding: .5rem .75rem; }
+.cr-score-formula code { color: #212529; font-size: .85rem; }
 #cr-scatter-tip       { position: fixed; pointer-events: none; background: rgba(0,0,0,.78); color: #fff; padding: 5px 10px; border-radius: 6px; font-size: .8rem; line-height: 1.5; white-space: nowrap; display: none; z-index: 9999; }
 </style>
 <script>
@@ -1109,6 +1350,14 @@ function crDrawScatter() {
         crDrawScoreDist();
     });
 })();
+/* Al abrir/cerrar el drawer derecho de bloques el ancho del contenido cambia,
+   pero Chart.js no se entera. Forzamos un resize tras la transición (0.2s)
+   para que el gráfico de actividad se redibuje al nuevo ancho. */
+['theme_boost/drawers:shown', 'theme_boost/drawers:hidden'].forEach(function(ev) {
+    document.addEventListener(ev, function() {
+        setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 250);
+    });
+});
 </script>
 
 <div class="container-fluid px-0">
@@ -1384,7 +1633,7 @@ function crDrawScatter() {
             class="btn btn-sm btn-warning cr-topunseen-filter-btn cr-type-active cr-badge-mod me-2 mb-1"
             data-modname="<?php echo s($mod); ?>"
             onclick="crFilterTopUnseen(this,'<?php echo s($mod); ?>')">
-      <?php echo s($mod); ?>
+      <?php echo get_string('modulename', $mod); ?>
     </button>
     <?php endforeach; ?>
   </div>
@@ -1449,7 +1698,7 @@ function crDrawScatter() {
 
 <!-- ── Gráfico de actividad + Heatmap ───────────────────────────────────── -->
 <?php if (!empty($chartvalues) || array_sum(array_map('array_sum', $heatmap)) > 0): ?>
-<div class="row g-3 mb-4">
+<div class="row g-3 mb-4 cr-charts-row">
 
   <!-- Gráfico temporal -->
   <?php if (!empty($chartvalues)): ?>
@@ -1555,7 +1804,7 @@ function crDrawScatter() {
     ?>
     <div class="d-flex align-items-center mb-2 gap-2">
       <div style="width:90px; flex-shrink:0; text-align:right;">
-        <span class="badge bg-light text-dark border cr-badge-mod"><?php echo $mod; ?></span>
+        <span class="badge bg-light text-dark border cr-badge-mod"><?php echo get_string('modulename', $mod); ?></span>
       </div>
       <div class="flex-grow-1">
         <div class="progress" style="height:22px;">
@@ -1614,7 +1863,7 @@ function crDrawScatter() {
             class="btn btn-sm btn-primary cr-type-filter-btn cr-type-active cr-badge-mod me-2 mb-1"
             data-modname="<?php echo s($mod); ?>"
             onclick="crFilterType(this)">
-      <?php echo s($mod); ?>
+      <?php echo get_string('modulename', $mod); ?>
     </button>
     <?php endforeach; ?>
   </div>
@@ -1736,8 +1985,8 @@ function crDrawScatter() {
             </td>
 
             <!-- Tipo -->
-            <td data-sort="<?php echo s($cm->modname); ?>">
-              <span class="badge bg-light text-dark border cr-badge-mod"><?php echo $cm->modname; ?></span>
+            <td data-sort="<?php echo s(get_string('modulename', $cm->modname)); ?>">
+              <span class="badge bg-light text-dark border cr-badge-mod"><?php echo get_string('modulename', $cm->modname); ?></span>
             </td>
 
             <!-- Vistas totales -->
@@ -1907,6 +2156,25 @@ function crDrawScatter() {
   </div>
   <div class="card-body cr-scatter-wrap">
     <canvas id="cr-scatter-canvas" style="display:block;width:100%;height:320px;cursor:crosshair;"></canvas>
+    <details class="cr-score-help mt-3">
+      <summary><?php echo get_string('scorehelp_title', 'report_courseradar'); ?></summary>
+      <div class="small text-muted mt-2">
+        <p class="mb-2"><?php echo get_string('scorehelp_factors', 'report_courseradar'); ?></p>
+        <ul class="mb-2 ps-3">
+          <li><?php echo get_string('scorehelp_resources', 'report_courseradar'); ?></li>
+          <li><?php echo get_string('scorehelp_recency', 'report_courseradar'); ?></li>
+          <?php if ($hasanycompletion && $totaltracked > 0): ?>
+          <li><?php echo get_string('scorehelp_completion', 'report_courseradar'); ?></li>
+          <?php endif; ?>
+        </ul>
+        <div class="cr-score-formula">
+          <span class="fw-semibold"><?php echo get_string('scorehelp_formula', 'report_courseradar'); ?>:</span>
+          <code><?php echo ($hasanycompletion && $totaltracked > 0)
+              ? get_string('scorehelp_formula_full', 'report_courseradar')
+              : get_string('scorehelp_formula_basic', 'report_courseradar'); ?></code>
+        </div>
+      </div>
+    </details>
   </div>
 </div>
 <div id="cr-scatter-tip"></div>
