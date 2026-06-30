@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.5.0...v1.6.0) (2026-06-30)
+
+
+### Features
+
+* add student self-view with personal metrics and class comparison ([513c33f](https://github.com/SergioComeron/moodle-report_courseradar/commit/513c33f2d20b84345f369e067ba638a8877fccbc))
+* explain the engagement score with its formula in the student comparison card ([9ab1149](https://github.com/SergioComeron/moodle-report_courseradar/commit/9ab11490cf4627b5e05cabdf6a68b311d9777b78))
+
+
+### Bug Fixes
+
+* localize activity type names instead of showing raw module names ([b263b3a](https://github.com/SergioComeron/moodle-report_courseradar/commit/b263b3ae0ff86b501e3f51a0f15fe9924977e86f))
+* localize chart month labels that were always shown in English ([a32c251](https://github.com/SergioComeron/moodle-report_courseradar/commit/a32c251111384bf380aa2c3e4ffbbd99b1f48d9a))
+* prevent activity and heatmap cards from overlapping when the right block drawer is open ([2840f3a](https://github.com/SergioComeron/moodle-report_courseradar/commit/2840f3af3fbe31783e0f1ae67d4f65152895b5c4))
+* use phpdoc [@covers](https://github.com/covers) tags so coverage is recognised on Moodle 4.5 ([684a6a2](https://github.com/SergioComeron/moodle-report_courseradar/commit/684a6a2fafde9a974f85ee64bd390bd82cfa021d))
+
 ## [1.5.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.4.3...v1.5.0) (2026-06-15)
 
 
