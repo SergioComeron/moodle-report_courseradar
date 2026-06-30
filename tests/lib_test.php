@@ -16,8 +16,6 @@
 
 namespace report_courseradar;
 
-use PHPUnit\Framework\Attributes\CoversFunction;
-
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
@@ -29,13 +27,13 @@ require_once($CFG->dirroot . '/report/courseradar/locallib.php');
  * @package    report_courseradar
  * @copyright  2025 Sergio Comerón <sergiocomeron@icloud.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @covers     \report_courseradar_barclass
+ * @covers     \report_courseradar_get_students
+ * @covers     \report_courseradar_atrisk
+ * @covers     \report_courseradar_engagement_scores
+ * @covers     \report_courseradar_score_bands
+ * @covers     \report_courseradar_scatter_data
  */
-#[CoversFunction('report_courseradar_barclass')]
-#[CoversFunction('report_courseradar_get_students')]
-#[CoversFunction('report_courseradar_atrisk')]
-#[CoversFunction('report_courseradar_engagement_scores')]
-#[CoversFunction('report_courseradar_score_bands')]
-#[CoversFunction('report_courseradar_scatter_data')]
 final class lib_test extends \advanced_testcase {
     // Tests for report_courseradar_barclass.
 
