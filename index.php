@@ -35,7 +35,16 @@ $course  = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
 $context = context_course::instance($courseid);
 
 require_login($course);
-require_capability('report/courseradar:view', $context);
+
+// Teachers/managers (with the view capability) see the full report. Enrolled
+// students — and teachers previewing via "Switch role to → Student" — see their
+// personal self-view. Anyone else is denied access.
+$canviewreport = has_capability('report/courseradar:view', $context);
+$isstudentview = !$canviewreport
+    && (is_enrolled($context, $USER, '', true) || is_role_switched($courseid));
+if (!$canviewreport && !$isstudentview) {
+    require_capability('report/courseradar:view', $context);
+}
 
 // Date range.
 $defaultfrom = $course->startdate ?: mktime(0, 0, 0, 1, 1, (int)date('Y'));
@@ -74,6 +83,227 @@ $totalmodules = count($validcms);
 $students      = report_courseradar_get_students($context);
 $totalstudents = count($students);
 $studentids    = array_keys($students);
+
+// Student self-view.
+// Enrolled students (without the view capability) see their own personal
+// metrics for the whole course, plus an anonymous comparison with the class
+// average. No date filter is applied: data covers the entire course history.
+if ($isstudentview) {
+    $myid = (int)$USER->id;
+
+    // Per-student per-module views and last access (whole course, no date range).
+    $studentlog   = []; // Keyed [uid][cmid] => view count.
+    $lastaccessby = []; // Keyed [uid] => last module-view timestamp.
+    $myday        = []; // Keyed [Y-m-d] => count of my own daily interactions.
+
+    if ($totalstudents > 0 && $totalmodules > 0) {
+        [$insql, $inparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'st');
+        $baseparams = array_merge([
+            'courseid'     => $courseid,
+            'action'       => 'viewed',
+            'contextlevel' => CONTEXT_MODULE,
+        ], $inparams);
+
+        $sql = "SELECT contextinstanceid AS cmid, userid,
+                       COUNT(*) AS views, MAX(timecreated) AS lastaccess
+                  FROM {logstore_standard_log}
+                 WHERE courseid     = :courseid
+                   AND action       = :action
+                   AND contextlevel = :contextlevel
+                   AND userid {$insql}
+                 GROUP BY contextinstanceid, userid";
+        $rs = $DB->get_recordset_sql($sql, $baseparams);
+        foreach ($rs as $row) {
+            $studentlog[$row->userid][$row->cmid] = (int)$row->views;
+            $la = (int)$row->lastaccess;
+            if (!isset($lastaccessby[$row->userid]) || $la > $lastaccessby[$row->userid]) {
+                $lastaccessby[$row->userid] = $la;
+            }
+        }
+        $rs->close();
+
+        // My own daily activity across the whole course.
+        $sqlday = "SELECT (timecreated / 86400) * 86400 AS dayts, COUNT(*) AS cnt
+                     FROM {logstore_standard_log}
+                    WHERE courseid     = :courseid
+                      AND action       = :action
+                      AND contextlevel = :contextlevel
+                      AND userid       = :myid
+                    GROUP BY timecreated / 86400
+                    ORDER BY dayts";
+        $rs = $DB->get_recordset_sql($sqlday, [
+            'courseid'     => $courseid,
+            'action'       => 'viewed',
+            'contextlevel' => CONTEXT_MODULE,
+            'myid'         => $myid,
+        ]);
+        foreach ($rs as $row) {
+            $myday[date('Y-m-d', (int)$row->dayts)] = (int)$row->cnt;
+        }
+        $rs->close();
+    }
+
+    // Days since last access, per student.
+    $daysinactive = [];
+    foreach ($students as $uid => $stu) {
+        $daysinactive[$uid] = report_courseradar_days_inactive($lastaccessby[$uid] ?? 0);
+    }
+
+    // Completion (whole course).
+    $completionenabled = !empty($course->enablecompletion);
+    $hasanycompletion  = false;
+    $totaltracked      = 0;
+    if ($completionenabled) {
+        foreach ($validcms as $cm) {
+            if ($cm->completion > 0) {
+                $hasanycompletion = true;
+                $totaltracked++;
+            }
+        }
+    }
+    $completedbystu  = []; // Keyed [uid] => completed tracked activities.
+    $mycompletedcms  = []; // Keyed [cmid] => true for tracked activities I completed.
+    if ($hasanycompletion && $totalstudents > 0) {
+        [$cminsql, $cminp]   = $DB->get_in_or_equal(array_keys($validcms), SQL_PARAMS_NAMED, 'cm');
+        [$stcinsql, $stcinp] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'stc');
+        $rs = $DB->get_recordset_sql(
+            "SELECT coursemoduleid AS cmid, userid, completionstate
+               FROM {course_modules_completion}
+              WHERE coursemoduleid {$cminsql} AND userid {$stcinsql} AND completionstate > 0",
+            array_merge($cminp, $stcinp)
+        );
+        foreach ($rs as $row) {
+            if (isset($validcms[$row->cmid]) && $validcms[$row->cmid]->completion > 0) {
+                $completedbystu[$row->userid] = ($completedbystu[$row->userid] ?? 0) + 1;
+                if ((int)$row->userid === $myid) {
+                    $mycompletedcms[(int)$row->cmid] = true;
+                }
+            }
+        }
+        $rs->close();
+    }
+
+    // Engagement scores for all students (drives my score and the class average).
+    $riskscores = report_courseradar_engagement_scores(
+        $students,
+        $studentlog,
+        $daysinactive,
+        $totalmodules,
+        $hasanycompletion,
+        $totaltracked,
+        $completedbystu
+    );
+
+    // My own metrics.
+    $myvisited    = count($studentlog[$myid] ?? []);
+    $mycoverage   = ($totalmodules > 0) ? (int)round(($myvisited / $totalmodules) * 100) : 0;
+    $myscore      = $riskscores[$myid] ?? 0;
+    $mydaysraw    = $daysinactive[$myid] ?? -1;
+    $mycompletion = ($hasanycompletion && $totaltracked > 0)
+        ? (int)round((count($mycompletedcms) / $totaltracked) * 100)
+        : 0;
+
+    // Class averages (anonymous aggregates).
+    $clsscore = $riskscores ? (int)round(array_sum($riskscores) / count($riskscores)) : 0;
+    $covsum   = 0.0;
+    $compsum  = 0.0;
+    foreach ($students as $uid => $stu) {
+        if ($totalmodules > 0) {
+            $covsum += (count($studentlog[$uid] ?? []) / $totalmodules) * 100;
+        }
+        if ($hasanycompletion && $totaltracked > 0) {
+            $compsum += (($completedbystu[$uid] ?? 0) / $totaltracked) * 100;
+        }
+    }
+    $clscoverage   = $totalstudents > 0 ? (int)round($covsum / $totalstudents) : 0;
+    $clscompletion = $totalstudents > 0 ? (int)round($compsum / $totalstudents) : 0;
+
+    // Pending resources: visible to me, not yet visited, with a viewable URL.
+    $myvisitedcms = $studentlog[$myid] ?? [];
+    $pending      = [];
+    foreach ($validcms as $cmid => $cm) {
+        if (!$cm->uservisible || isset($myvisitedcms[$cmid]) || empty($cm->url)) {
+            continue;
+        }
+        $pending[] = [
+            'name' => $cm->get_formatted_name(),
+            'url'  => $cm->url->out(false),
+            'icon' => $cm->get_icon_url()->out(false),
+            'type' => get_string('pluginname', $cm->modname),
+        ];
+    }
+
+    // My activity-over-time chart (daily, or weekly when the span exceeds 90 days).
+    $stuchart = null;
+    if (!empty($myday)) {
+        $chfrom = $course->startdate ?: strtotime((string)min(array_keys($myday)));
+        $chto   = time();
+        $stulabels = [];
+        $stuvalues = [];
+        $stuweekly = (($chto - $chfrom) / DAYSECS) > 90;
+        if ($stuweekly) {
+            $byweek = [];
+            foreach ($myday as $day => $cnt) {
+                $ts    = strtotime($day);
+                $monds = $ts - ((int)date('N', $ts) - 1) * 86400;
+                $wk    = date('Y-m-d', $monds);
+                $byweek[$wk] = ($byweek[$wk] ?? 0) + $cnt;
+            }
+            ksort($byweek);
+            foreach ($byweek as $wk => $cnt) {
+                $stulabels[] = userdate(strtotime($wk), get_string('chartdateformat', 'report_courseradar'));
+                $stuvalues[] = $cnt;
+            }
+        } else {
+            for ($d = $chfrom; $d <= $chto; $d += DAYSECS) {
+                $stulabels[] = userdate($d, get_string('chartdateformat', 'report_courseradar'));
+                $stuvalues[] = $myday[date('Y-m-d', $d)] ?? 0;
+            }
+        }
+        if (!empty($stuvalues)) {
+            $stuchart = new \core\chart_line();
+            $stuchart->set_smooth(true);
+            $stuchart->add_series(new \core\chart_series(
+                get_string('totalinteractions', 'report_courseradar'),
+                $stuvalues
+            ));
+            $stuchart->set_labels($stulabels);
+        }
+    }
+
+    $mydaystext = ($mydaysraw < 0)
+        ? get_string('neveraccessed', 'report_courseradar')
+        : $mydaysraw;
+
+    $templatecontext = [
+        'coursename'    => format_string($course->fullname),
+        'score'         => $myscore,
+        'scoreclass'    => report_courseradar_barclass($myscore),
+        'scoretextclass' => str_replace('bg-', 'text-', report_courseradar_barclass($myscore)),
+        'coverage'      => $mycoverage,
+        'coverageclass' => report_courseradar_barclass($mycoverage),
+        'completion'    => $mycompletion,
+        'hascompletion' => $hasanycompletion,
+        'daysinactive'  => $mydaystext,
+        'classscore'    => $clsscore,
+        'classcoverage' => $clscoverage,
+        'classcompletion' => $clscompletion,
+        'scoreabove'    => $myscore >= $clsscore,
+        'coverageabove' => $mycoverage >= $clscoverage,
+        'completionabove' => $mycompletion >= $clscompletion,
+        'pending'       => $pending,
+        'haspending'    => !empty($pending),
+        'pendingcount'  => count($pending),
+        'allvisited'    => empty($pending) && $totalmodules > 0,
+        'charthtml'     => $stuchart ? $OUTPUT->render($stuchart) : '',
+        'haschart'      => (bool)$stuchart,
+    ];
+
+    echo $OUTPUT->header();
+    echo $OUTPUT->render_from_template('report_courseradar/student_view', $templatecontext);
+    echo $OUTPUT->footer();
+    exit;
+}
 
 // Log queries.
 $logdata    = []; // Keyed by cmid: totalviews, uniqueusers, lastaccess.

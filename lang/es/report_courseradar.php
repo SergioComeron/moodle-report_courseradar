@@ -24,12 +24,14 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+$string['aboveaverage']        = 'Por encima de la media';
 $string['activityovertime']    = 'Actividad a lo largo del tiempo';
 $string['activityovertime_desc'] = 'Evolución diaria de las interacciones de los alumnos en el período seleccionado.';
 $string['activitypattern']     = 'Patrón de actividad (día x hora)';
 $string['activitypattern_desc'] = 'Interacciones agrupadas por día de la semana y franja horaria — muestra cuándo estudian más los alumnos.';
 $string['adjustperiod']        = 'Ajustar período';
 $string['allstudentsviewed']   = '¡Todos los estudiantes han visto este recurso!';
+$string['allvisited']          = '¡Bien hecho! Has abierto todos los recursos disponibles.';
 $string['analyzingperiod']     = 'Período analizado: {$a->from} – {$a->to}';
 $string['applyfilter']         = 'Aplicar filtro';
 $string['atrisk']              = 'Alumnos en riesgo';
@@ -38,7 +40,11 @@ $string['atrisk_lowactivity']  = 'Participación baja (< 30% recursos visitados)
 $string['atrisk_noactivity']   = 'Sin ninguna interacción';
 $string['avgengagement']       = 'Participación media';
 $string['avgviews'] = 'Media de vistas / módulo';
+$string['belowaverage']        = 'Por debajo de la media';
 $string['chartdateformat']     = '%d %b';
+$string['classaverage']        = 'Media de la clase';
+$string['compareclass']        = 'Cómo te comparas con la clase';
+$string['compareclass_desc']   = 'Tus cifras junto a la media (anónima) de la clase. Nunca se identifica a otros estudiantes.';
 $string['completednoftrack']   = 'Sin rastreo de finalización';
 $string['completion']          = 'Finalización';
 $string['completion_desc']     = 'Alumnos que lo han completado';
@@ -72,6 +78,7 @@ $string['moduletypesummary'] = 'Interacciones por tipo de recurso';
 $string['moduletypesummary_desc'] = 'Vistas totales por tipo de recurso, normalizadas al tipo más visitado.';
 $string['mostviewed']          = 'Más visitado';
 $string['msgsent']             = 'Mensaje enviado';
+$string['myactivity_desc']     = 'Tus interacciones diarias con los recursos del curso.';
 $string['neveraccessed']   = 'Nunca';
 $string['noactivitydata']      = 'Sin datos de actividad en este período.';
 $string['nointeractions']      = 'No hay interacciones registradas en este período.';
@@ -81,6 +88,8 @@ $string['notifyrisk']          = 'Mensaje a alumnos en riesgo';
 $string['notifyrisk_placeholder'] = 'Escribe tu mensaje aquí...';
 $string['notviewed']           = 'sin ver';
 $string['noviewsyet']          = 'Sin vistas aún.';
+$string['pendingresources']    = 'Recursos que aún no has abierto';
+$string['pendingresources_desc'] = 'Ábrelos para seguir el ritmo del curso.';
 $string['plugindesc']          = 'Seguimiento de las interacciones de los estudiantes con los recursos y actividades del curso.';
 $string['pluginname']          = 'Course Radar';
 
@@ -115,6 +124,7 @@ $string['student']             = 'Estudiante';
 $string['studentcoverage_desc'] = '% de recursos del curso visitados';
 $string['studentengagement']   = 'Actividad por estudiante';
 $string['studentengagement_desc'] = 'Actividad individual de cada alumno. Haz clic en una columna para ordenar. Expande una fila para ver el detalle por recurso.';
+$string['studentintro']        = 'Este es el resumen de tu actividad en este curso. Solo tú y tus profesores podéis verlo.';
 $string['studentviews_desc']   = 'Accesos totales a todos los recursos';
 $string['tab_overview']        = 'Resumen';
 $string['tab_resources']       = 'Recursos';
@@ -135,3 +145,4 @@ $string['viewprofile']         = 'Ver perfil';
 $string['weeklyactivity'] = 'Actividad semanal';
 $string['weeklyaggregated']    = 'Agrupado por semana (período > 90 días)';
 $string['weekvspreview']       = 'vs. sem. anterior';
+$string['you']                 = 'Tú';
