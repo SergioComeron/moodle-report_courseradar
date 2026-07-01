@@ -60,9 +60,13 @@ jobs:
             --exclude "courseradar/.git/*" \
             --exclude "courseradar/.github/*" \
             --exclude "courseradar/.gitignore" \
+            --exclude "courseradar/.gitattributes" \
+            --exclude "courseradar/CLAUDE.md" \
             --exclude "courseradar/CONTRIBUTING.md" \
-            --exclude "courseradar/Makefile" \
-            --exclude "courseradar/.githooks/*" \
+            --exclude "courseradar/composer.json" \
+            --exclude "courseradar/composer.lock" \
+            --exclude "courseradar/phpcs.xml" \
+            --exclude "courseradar/scripts/*" \
             --exclude "courseradar/release-please-config.json" \
             --exclude "courseradar/.release-please-manifest.json"
 
