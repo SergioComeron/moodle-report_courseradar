@@ -823,8 +823,7 @@ echo $OUTPUT->header();
 ?>
 <style>
 /* ── Course Radar ──────────────────────────────────────────────────────────── */
-.cr-card              { border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); transition: transform .15s; }
-.cr-card:hover        { transform: translateY(-3px); }
+.cr-card              { border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
 .cr-stat              { font-size: 2.2rem; font-weight: 700; line-height: 1.1; }
 .cr-stat-label        { font-size: .85rem; color: #6c757d; margin-top: .25rem; }
 .cr-maxname           { font-size: 1rem; font-weight: 600; word-break: break-word; }
@@ -848,7 +847,6 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-act-grid          { display:flex; flex-wrap:wrap; gap:3px; }
 .cr-zero              { color: #adb5bd; }
 /* Alumnos en riesgo */
-.cr-risk-card         { border-left: 4px solid #dc3545 !important; }
 .cr-risk-names        { max-height: 180px; overflow-y: auto; columns: 2; column-gap: 1rem; }
 .cr-risk-names a      { display: block; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Heatmap */
@@ -1541,7 +1539,7 @@ function crDrawScatter() {
 
 <!-- ── Panel de alumnos en riesgo ───────────────────────────────────────── -->
 <?php if ($totalstudents > 0 && $totalrisk > 0): ?>
-<div class="card cr-card cr-risk-card mb-4">
+<div class="card cr-card mb-4">
   <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
     <h5 class="mb-0 fw-bold text-danger">
       <?php echo $OUTPUT->pix_icon('i/warning', '', 'core', ['class' => 'me-1']); ?>
