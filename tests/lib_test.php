@@ -33,6 +33,9 @@ require_once($CFG->dirroot . '/report/courseradar/locallib.php');
  * @covers     \report_courseradar_engagement_scores
  * @covers     \report_courseradar_score_bands
  * @covers     \report_courseradar_scatter_data
+ * @covers     \report_courseradar_dedication
+ * @covers     \report_courseradar_dedication_average
+ * @covers     \report_courseradar_format_dedication
  */
 final class lib_test extends \advanced_testcase {
     // Tests for report_courseradar_barclass.
@@ -513,5 +516,95 @@ final class lib_test extends \advanced_testcase {
 
         $this->assertStringContainsString('id=' . $student->id, $result[0]['url']);
         $this->assertStringContainsString('course=' . $course->id, $result[0]['url']);
+    }
+
+    // Tests for report_courseradar_format_dedication.
+
+    /**
+     * Test that hours and minutes are both shown when present.
+     */
+    public function test_format_dedication_hours_and_minutes(): void {
+        $this->assertEquals('3h 12m', report_courseradar_format_dedication((3 * HOURSECS) + (12 * MINSECS)));
+        $this->assertEquals('2h', report_courseradar_format_dedication(2 * HOURSECS));
+    }
+
+    /**
+     * Test that under one hour only minutes are shown.
+     */
+    public function test_format_dedication_minutes_only(): void {
+        $this->assertEquals('45m', report_courseradar_format_dedication(45 * MINSECS));
+        $this->assertEquals('1m', report_courseradar_format_dedication(90));
+    }
+
+    /**
+     * Test that sub-minute and empty values are rendered as placeholders.
+     */
+    public function test_format_dedication_edge_values(): void {
+        $this->assertEquals('< 1m', report_courseradar_format_dedication(30));
+        $this->assertEquals('—', report_courseradar_format_dedication(0));
+        $this->assertEquals('—', report_courseradar_format_dedication(-100));
+    }
+
+    // Tests for report_courseradar_dedication_average.
+
+    /**
+     * Test that the average only counts students with recorded time.
+     */
+    public function test_dedication_average_ignores_students_without_data(): void {
+        $dedication = [1 => 3600, 2 => 1800, 3 => 0];
+        $this->assertEquals(2700, report_courseradar_dedication_average($dedication));
+    }
+
+    /**
+     * Test that an empty or all-zero dataset averages to zero.
+     */
+    public function test_dedication_average_without_data(): void {
+        $this->assertEquals(0, report_courseradar_dedication_average([]));
+        $this->assertEquals(0, report_courseradar_dedication_average([1 => 0, 2 => 0]));
+    }
+
+    // Tests for report_courseradar_dedication.
+
+    /**
+     * Test that no query is attempted when there are no students.
+     */
+    public function test_dedication_without_students(): void {
+        $this->assertSame([], report_courseradar_dedication(1, []));
+    }
+
+    /**
+     * Test that sessions are summed per student and filtered by date range.
+     */
+    public function test_dedication_sums_sessions_in_range(): void {
+        global $DB;
+        if (!report_courseradar_dedication_available()) {
+            $this->markTestSkipped('block_dedication is not installed.');
+        }
+        $this->resetAfterTest();
+        $course  = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $other   = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $week    = time() - WEEKSECS;
+
+        foreach ([[$student->id, 600, $week], [$student->id, 900, $week + DAYSECS], [$other->id, 300, $week]] as $row) {
+            $DB->insert_record('block_dedication', (object)[
+                'userid'    => $row[0],
+                'courseid'  => $course->id,
+                'timespent' => $row[1],
+                'timestart' => $row[2],
+            ]);
+        }
+
+        $all = report_courseradar_dedication($course->id, [$student->id, $other->id]);
+        $this->assertEquals(1500, $all[$student->id]);
+        $this->assertEquals(300, $all[$other->id]);
+
+        // Only the second session falls inside this range.
+        $ranged = report_courseradar_dedication($course->id, [$student->id], $week + HOURSECS);
+        $this->assertEquals(900, $ranged[$student->id]);
+
+        // A range that ends before any session returns nothing.
+        $empty = report_courseradar_dedication($course->id, [$student->id], 0, $week - DAYSECS);
+        $this->assertArrayNotHasKey($student->id, $empty);
     }
 }

@@ -126,16 +126,104 @@ function report_courseradar_inactive_class(int $days): string {
 }
 
 /**
- * Returns visible course modules sorted by student coverage ascending (least viewed first).
+ * Whether time-spent data from block_dedication can be read.
  *
- * Modules with 100% coverage are excluded since they need no attention.
+ * Requires the Catalyst flavour of block_dedication, which precalculates
+ * sessions into its own table through a scheduled task. Older flavours of the
+ * block compute dedication on the fly and expose no such table, so the feature
+ * simply stays hidden.
  *
- * @param array $validcms      Course modules [cmid => cm_info].
- * @param array $logdata       Aggregate log data [cmid => stdClass{uniqueusers,...}].
- * @param int   $totalstudents Total number of enrolled students.
- * @param int   $limit         Maximum number of results to return.
- * @return array Sorted array of ['cm', 'unique', 'unseen', 'pct'] entries.
+ * @return bool True when the block and its data table are present.
  */
+function report_courseradar_dedication_available(): bool {
+    global $DB;
+    return class_exists('\block_dedication\lib\utils')
+        && $DB->get_manager()->table_exists('block_dedication');
+}
+
+/**
+ * Returns the time each student spent in the course, as recorded by block_dedication.
+ *
+ * Sessions are aggregated in a single query rather than calling
+ * block_dedication\lib\utils::timespent() per student, which would issue one
+ * query each and ignore the report date range.
+ *
+ * @param int   $courseid   Course id.
+ * @param array $studentids Student user ids to report on.
+ * @param int   $datefrom   Only count sessions started at or after this timestamp (0 = no limit).
+ * @param int   $dateto     Only count sessions started at or before this timestamp (0 = no limit).
+ * @return array [userid => seconds spent]; empty when the block is unavailable.
+ */
+function report_courseradar_dedication(int $courseid, array $studentids, int $datefrom = 0, int $dateto = 0): array {
+    global $DB;
+    if (empty($studentids) || !report_courseradar_dedication_available()) {
+        return [];
+    }
+    [$insql, $params] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'ded');
+    $params['courseid'] = $courseid;
+    $where = "courseid = :courseid AND userid {$insql}";
+    if ($datefrom > 0) {
+        $where .= ' AND timestart >= :datefrom';
+        $params['datefrom'] = $datefrom;
+    }
+    if ($dateto > 0) {
+        $where .= ' AND timestart <= :dateto';
+        $params['dateto'] = $dateto;
+    }
+    $rows = $DB->get_records_sql(
+        "SELECT userid, SUM(timespent) AS secs
+           FROM {block_dedication}
+          WHERE {$where}
+       GROUP BY userid",
+        $params
+    );
+    $result = [];
+    foreach ($rows as $row) {
+        $result[(int)$row->userid] = (int)$row->secs;
+    }
+    return $result;
+}
+
+/**
+ * Returns the average time spent, counting only students with recorded sessions.
+ *
+ * Matches the semantics of block_dedication\lib\utils::get_average(), which
+ * divides by the number of distinct users present in the dedication table.
+ *
+ * @param array $dedication [userid => seconds spent].
+ * @return int Average seconds per student with data, 0 when there is none.
+ */
+function report_courseradar_dedication_average(array $dedication): int {
+    $withdata = array_filter($dedication, function ($secs) {
+        return $secs > 0;
+    });
+    if (empty($withdata)) {
+        return 0;
+    }
+    return (int)round(array_sum($withdata) / count($withdata));
+}
+
+/**
+ * Formats a number of seconds as a compact time-spent string.
+ *
+ * @param int $totalsecs Seconds spent; 0 or less means no data.
+ * @return string Compact representation, e.g. '3h 12m', '45m', '< 1m' or '—'.
+ */
+function report_courseradar_format_dedication(int $totalsecs): string {
+    if ($totalsecs <= 0) {
+        return '—';
+    }
+    $hours = (int)floor($totalsecs / HOURSECS);
+    $mins  = (int)floor(($totalsecs - ($hours * HOURSECS)) / MINSECS);
+    if ($hours > 0) {
+        return $mins > 0 ? $hours . 'h ' . $mins . 'm' : $hours . 'h';
+    }
+    if ($mins > 0) {
+        return $mins . 'm';
+    }
+    return '< 1m';
+}
+
 /**
  * Computes the composite engagement score (0–100) for each student.
  *

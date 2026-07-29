@@ -183,6 +183,12 @@ if ($isstudentview) {
         $rs->close();
     }
 
+    // Time spent in the course, when block_dedication is available (whole course).
+    $dedication    = report_courseradar_dedication($courseid, $studentids);
+    $hasdedication = !empty($dedication);
+    $mydedication  = $dedication[$myid] ?? 0;
+    $clsdedication = report_courseradar_dedication_average($dedication);
+
     // Engagement scores for all students (drives my score and the class average).
     $riskscores = report_courseradar_engagement_scores(
         $students,
@@ -275,8 +281,17 @@ if ($isstudentview) {
         ? get_string('neveraccessed', 'report_courseradar')
         : $mydaysraw;
 
+    // Time-spent bars are drawn relative to the larger of my time and the average.
+    $dedmax = max($mydedication, $clsdedication, 1);
+
     $templatecontext = [
         'coursename'    => format_string($course->fullname),
+        'hasdedication' => $hasdedication,
+        'dedication'    => report_courseradar_format_dedication($mydedication),
+        'dedicationpct' => (int)round(($mydedication / $dedmax) * 100),
+        'classdedication'    => report_courseradar_format_dedication($clsdedication),
+        'classdedicationpct' => (int)round(($clsdedication / $dedmax) * 100),
+        'dedicationabove'    => $mydedication >= $clsdedication,
         'score'         => $myscore,
         'scoreclass'    => report_courseradar_barclass($myscore),
         'scoretextclass' => str_replace('bg-', 'text-', report_courseradar_barclass($myscore)),
@@ -472,6 +487,20 @@ if ($totalstudents > 0) {
         $totalcoursevisits += (int)$row->visits;
     }
     $rs->close();
+}
+
+// Time spent per student, read from block_dedication when it is installed.
+// The block precalculates sessions through a scheduled task, so the column stays
+// empty until that task has run. Viewing it also requires the block's own
+// reporting capability, so its restrictions are not bypassed here.
+$hasdedication = report_courseradar_dedication_available()
+    && has_capability('block/dedication:viewreports', $context);
+$dedication    = []; // Keyed by userid: seconds spent in the course.
+$avgdedication = 0;
+
+if ($hasdedication) {
+    $dedication    = report_courseradar_dedication($courseid, $studentids, $datefrom, $dateto);
+    $avgdedication = report_courseradar_dedication_average($dedication);
 }
 
 // Week-over-week comparison (current calendar week vs previous week, always absolute).
@@ -814,8 +843,8 @@ foreach ($validcms as $cm) {
 
 // Number of resource table columns (varies when completion is enabled).
 $rescols = $hasanycompletion ? 8 : 7;
-// Number of student table columns (base 9 + 1 if completion tracking active).
-$stucols = $hasanycompletion ? 10 : 9;
+// Number of student table columns (base 9, plus completion and time-spent columns).
+$stucols = 9 + ($hasanycompletion ? 1 : 0) + ($hasdedication ? 1 : 0);
 
 // Output.
 echo $OUTPUT->header();
@@ -1509,6 +1538,21 @@ function crDrawScatter() {
       </div>
     </div>
   </div>
+  <?php if ($hasdedication): ?>
+  <div class="col-6 col-lg">
+    <div class="card cr-card h-100 border-0 border-start border-dark border-4">
+      <div class="card-body">
+        <div class="cr-stat"><?php echo report_courseradar_format_dedication($avgdedication); ?></div>
+        <div class="cr-stat-label">
+          <?php echo get_string('avgdedication', 'report_courseradar'); ?>
+          <small class="d-block fw-normal text-muted">
+            <?php echo get_string('avgdedication_desc', 'report_courseradar'); ?>
+          </small>
+        </div>
+      </div>
+    </div>
+  </div>
+  <?php endif; ?>
   <div class="col-6 col-lg">
     <div class="card cr-card h-100 border-0 border-start border-info border-4">
       <div class="card-body">
@@ -2231,6 +2275,15 @@ function crDrawScatter() {
                 <?php echo get_string('coursevisits_desc', 'report_courseradar'); ?>
               </small>
             </th>
+            <?php if ($hasdedication): ?>
+            <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('dedication', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('dedication_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
+            <?php endif; ?>
             <th class="cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('lastcoursevisit', 'report_courseradar'); ?>
@@ -2340,6 +2393,13 @@ function crDrawScatter() {
                 data-sort="<?php echo $cvisits; ?>">
               <?php echo $cvisits; ?>
             </td>
+
+            <?php if ($hasdedication): $dedsecs = $dedication[$uid] ?? 0; ?>
+            <td class="text-center fw-semibold <?php echo $dedsecs === 0 ? 'cr-zero' : ''; ?>"
+                data-sort="<?php echo $dedsecs; ?>">
+              <?php echo report_courseradar_format_dedication($dedsecs); ?>
+            </td>
+            <?php endif; ?>
 
             <?php $lastcv = $lastcoursevisit[$uid] ?? 0; ?>
             <td data-sort="<?php echo $lastcv; ?>">
