@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for report_courseradar.
+ * Hook callbacks for report_courseradar.
  *
  * @package    report_courseradar
  * @copyright  2025 Sergio Comerón <sergiocomeron@icloud.com>
@@ -24,8 +24,9 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026090100;
-$plugin->requires  = 2024100700;
-$plugin->component = 'report_courseradar';
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '1.0.0';
+$callbacks = [
+    [
+        'hook'     => \core\hook\navigation\secondary_extend::class,
+        'callback' => \report_courseradar\hook\callbacks::class . '::extend_secondary',
+    ],
+];
