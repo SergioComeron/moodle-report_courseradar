@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.6.1...v1.7.0) (2026-09-01)
+
+
+### Features
+
+* añadir Course Radar al menú Más para alumnos ([f3ecc4a](https://github.com/SergioComeron/moodle-report_courseradar/commit/f3ecc4ae5d066c72d349be984e20a80157fcfdfe))
+* mostrar tiempo de conexión por alumno desde block_dedication ([d15eab7](https://github.com/SergioComeron/moodle-report_courseradar/commit/d15eab7965989eee8f64998199479b71f829ed3d))
+
+
+### Bug Fixes
+
+* cargar config.php con SCRIPT_FILENAME para installs con symlink ([27e79a5](https://github.com/SergioComeron/moodle-report_courseradar/commit/27e79a57bff735f409c3bb839aad59aba54f7e2c))
+* find() de navegación devuelve false, no null ([f1931f8](https://github.com/SergioComeron/moodle-report_courseradar/commit/f1931f88a5586f91d59d390606ecf7d5e162043a))
+* quitar efecto hover de las tarjetas y borde rojo del panel de riesgo ([bbf2cf6](https://github.com/SergioComeron/moodle-report_courseradar/commit/bbf2cf67abceb14ff9ba008798e5a7439f1ec144))
+* renombrar 'Alumnos en riesgo' a 'Alumnos con baja actividad' ([8f78b93](https://github.com/SergioComeron/moodle-report_courseradar/commit/8f78b93aefad4782ce143348d7c212223ab851cf))
+
 ## [1.6.1](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.6.0...v1.6.1) (2026-07-01)
 
 
