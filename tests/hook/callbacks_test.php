@@ -71,6 +71,6 @@ final class callbacks_test extends \advanced_testcase {
         $nav  = $this->init_course_secondary('editingteacher');
         $node = $nav->find('courseradar', \navigation_node::TYPE_CUSTOM);
 
-        $this->assertNull($node);
+        $this->assertFalse($node);
     }
 }
