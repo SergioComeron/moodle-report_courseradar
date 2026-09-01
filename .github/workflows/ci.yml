@@ -12,6 +12,9 @@ on:
 
 jobs:
   ci:
+    # release-please auto-merges its PR with GITHUB_TOKEN; CI then races the
+    # deleted head and fails in ~2s with "workflow file issue".
+    if: github.head_ref != 'release-please--branches--main'
     name: PHP ${{ matrix.php }} / Moodle ${{ matrix.moodle-branch }} / ${{ matrix.database }}
     runs-on: ubuntu-22.04
 
