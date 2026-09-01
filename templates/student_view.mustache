@@ -28,6 +28,12 @@
     * completion int Percentage of tracked activities completed.
     * hascompletion bool Whether completion tracking is active.
     * daysinactive string Days since last access (or "never" text).
+    * hasdedication bool Whether block_dedication time-spent data is available.
+    * dedication string My formatted time spent in the course.
+    * dedicationpct int Width of my time-spent bar, relative to the larger value.
+    * classdedication string Class average formatted time spent.
+    * classdedicationpct int Width of the class average time-spent bar.
+    * dedicationabove bool Whether my time spent is at or above the class average.
     * classscore int Class average engagement score.
     * classcoverage int Class average coverage.
     * classcompletion int Class average completion.
@@ -48,6 +54,8 @@
         "coverage": 64, "coverageclass": "bg-warning",
         "completion": 50, "hascompletion": true,
         "daysinactive": 2,
+        "hasdedication": true, "dedication": "4h 20m", "dedicationpct": 100,
+        "classdedication": "3h 10m", "classdedicationpct": 73, "dedicationabove": true,
         "classscore": 58, "classcoverage": 55, "classcompletion": 41,
         "scoreabove": true, "coverageabove": true, "completionabove": true,
         "pending": [{"name": "Topic 3 quiz", "url": "#", "icon": "", "type": "Quiz"}],
@@ -90,6 +98,17 @@
       </div>
     </div>
     {{/hascompletion}}
+    {{#hasdedication}}
+    <div class="col-6 col-lg-3">
+      <div class="card cr-card h-100 text-center">
+        <div class="card-body">
+          <div class="cr-stat">{{dedication}}</div>
+          <div class="cr-stat-label">{{#str}}dedication, report_courseradar{{/str}}</div>
+          <div class="small text-muted">{{#str}}dedication_desc, report_courseradar{{/str}}</div>
+        </div>
+      </div>
+    </div>
+    {{/hasdedication}}
     <div class="col-6 col-lg-3">
       <div class="card cr-card h-100 text-center">
         <div class="card-body">
@@ -175,6 +194,30 @@
         </div>
       </div>
       {{/hascompletion}}
+
+      {{#hasdedication}}
+      <div class="mt-3">
+        <div class="d-flex justify-content-between mb-1">
+          <span class="fw-semibold">{{#str}}dedication, report_courseradar{{/str}}</span>
+          <span>
+            <span class="badge {{#dedicationabove}}bg-success{{/dedicationabove}}{{^dedicationabove}}bg-secondary{{/dedicationabove}} text-white">
+              {{#dedicationabove}}{{#str}}aboveaverage, report_courseradar{{/str}}{{/dedicationabove}}
+              {{^dedicationabove}}{{#str}}belowaverage, report_courseradar{{/str}}{{/dedicationabove}}
+            </span>
+          </span>
+        </div>
+        <div class="progress cr-cmp-progress">
+          <div class="progress-bar bg-dark" role="progressbar" style="width: {{dedicationpct}}%;">
+            {{#str}}you, report_courseradar{{/str}}: {{dedication}}
+          </div>
+        </div>
+        <div class="progress cr-cmp-progress mt-1">
+          <div class="progress-bar bg-secondary" role="progressbar" style="width: {{classdedicationpct}}%;">
+            {{#str}}classaverage, report_courseradar{{/str}}: {{classdedication}}
+          </div>
+        </div>
+      </div>
+      {{/hasdedication}}
     </div>
   </div>
 
