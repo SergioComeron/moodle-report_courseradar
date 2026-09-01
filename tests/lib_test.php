@@ -36,6 +36,7 @@ require_once($CFG->dirroot . '/report/courseradar/locallib.php');
  * @covers     \report_courseradar_dedication
  * @covers     \report_courseradar_dedication_average
  * @covers     \report_courseradar_format_dedication
+ * @covers     \report_courseradar_student_display
  */
 final class lib_test extends \advanced_testcase {
     // Tests for report_courseradar_barclass.
@@ -606,5 +607,37 @@ final class lib_test extends \advanced_testcase {
         // A range that ends before any session returns nothing.
         $empty = report_courseradar_dedication($course->id, [$student->id], 0, $week - DAYSECS);
         $this->assertArrayNotHasKey($student->id, $empty);
+    }
+
+    // Tests for report_courseradar_student_display.
+
+    /**
+     * Unsaved settings default to enabled so existing student views keep all sections.
+     */
+    public function test_student_display_defaults_all_enabled(): void {
+        $this->resetAfterTest();
+        $display = report_courseradar_student_display();
+        $this->assertTrue($display['studentshowscore']);
+        $this->assertTrue($display['studentshowcoverage']);
+        $this->assertTrue($display['studentshowcompletion']);
+        $this->assertTrue($display['studentshowdedication']);
+        $this->assertTrue($display['studentshowdaysinactive']);
+        $this->assertTrue($display['studentshowcomparison']);
+        $this->assertTrue($display['studentshowpending']);
+        $this->assertTrue($display['studentshowchart']);
+    }
+
+    /**
+     * A checkbox stored as 0 hides that section and leaves the others on.
+     */
+    public function test_student_display_respects_disabled_setting(): void {
+        $this->resetAfterTest();
+        set_config('studentshowscore', 0, 'report_courseradar');
+        set_config('studentshowcomparison', 0, 'report_courseradar');
+        $display = report_courseradar_student_display();
+        $this->assertFalse($display['studentshowscore']);
+        $this->assertFalse($display['studentshowcomparison']);
+        $this->assertTrue($display['studentshowcoverage']);
+        $this->assertTrue($display['studentshowpending']);
     }
 }

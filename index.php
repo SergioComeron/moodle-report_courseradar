@@ -89,7 +89,8 @@ $studentids    = array_keys($students);
 // metrics for the whole course, plus an anonymous comparison with the class
 // average. No date filter is applied: data covers the entire course history.
 if ($isstudentview) {
-    $myid = (int)$USER->id;
+    $myid    = (int)$USER->id;
+    $display = report_courseradar_student_display();
 
     // Per-student per-module views and last access (whole course, no date range).
     $studentlog   = []; // Keyed [uid][cmid] => view count.
@@ -123,24 +124,26 @@ if ($isstudentview) {
         $rs->close();
 
         // My own daily activity across the whole course.
-        $sqlday = "SELECT (timecreated / 86400) * 86400 AS dayts, COUNT(*) AS cnt
-                     FROM {logstore_standard_log}
-                    WHERE courseid     = :courseid
-                      AND action       = :action
-                      AND contextlevel = :contextlevel
-                      AND userid       = :myid
-                    GROUP BY timecreated / 86400
-                    ORDER BY dayts";
-        $rs = $DB->get_recordset_sql($sqlday, [
-            'courseid'     => $courseid,
-            'action'       => 'viewed',
-            'contextlevel' => CONTEXT_MODULE,
-            'myid'         => $myid,
-        ]);
-        foreach ($rs as $row) {
-            $myday[date('Y-m-d', (int)$row->dayts)] = (int)$row->cnt;
+        if ($display['studentshowchart']) {
+            $sqlday = "SELECT (timecreated / 86400) * 86400 AS dayts, COUNT(*) AS cnt
+                         FROM {logstore_standard_log}
+                        WHERE courseid     = :courseid
+                          AND action       = :action
+                          AND contextlevel = :contextlevel
+                          AND userid       = :myid
+                        GROUP BY timecreated / 86400
+                        ORDER BY dayts";
+            $rs = $DB->get_recordset_sql($sqlday, [
+                'courseid'     => $courseid,
+                'action'       => 'viewed',
+                'contextlevel' => CONTEXT_MODULE,
+                'myid'         => $myid,
+            ]);
+            foreach ($rs as $row) {
+                $myday[date('Y-m-d', (int)$row->dayts)] = (int)$row->cnt;
+            }
+            $rs->close();
         }
-        $rs->close();
     }
 
     // Days since last access, per student.
@@ -184,21 +187,32 @@ if ($isstudentview) {
     }
 
     // Time spent in the course, when block_dedication is available (whole course).
-    $dedication    = report_courseradar_dedication($courseid, $studentids);
-    $hasdedication = !empty($dedication);
-    $mydedication  = $dedication[$myid] ?? 0;
-    $clsdedication = report_courseradar_dedication_average($dedication);
+    $dedication    = [];
+    $hasdedication = false;
+    $mydedication  = 0;
+    $clsdedication = 0;
+    if ($display['studentshowdedication']) {
+        $dedication    = report_courseradar_dedication($courseid, $studentids);
+        $hasdedication = !empty($dedication);
+        $mydedication  = $dedication[$myid] ?? 0;
+        $clsdedication = $display['studentshowcomparison']
+            ? report_courseradar_dedication_average($dedication)
+            : 0;
+    }
 
-    // Engagement scores for all students (drives my score and the class average).
-    $riskscores = report_courseradar_engagement_scores(
-        $students,
-        $studentlog,
-        $daysinactive,
-        $totalmodules,
-        $hasanycompletion,
-        $totaltracked,
-        $completedbystu
-    );
+    // Engagement scores (own KPI and/or class comparison).
+    $riskscores = [];
+    if ($display['studentshowscore']) {
+        $riskscores = report_courseradar_engagement_scores(
+            $students,
+            $studentlog,
+            $daysinactive,
+            $totalmodules,
+            $hasanycompletion,
+            $totaltracked,
+            $completedbystu
+        );
+    }
 
     // My own metrics.
     $myvisited    = count($studentlog[$myid] ?? []);
@@ -209,39 +223,60 @@ if ($isstudentview) {
         ? (int)round((count($mycompletedcms) / $totaltracked) * 100)
         : 0;
 
-    // Class averages (anonymous aggregates).
-    $clsscore = $riskscores ? (int)round(array_sum($riskscores) / count($riskscores)) : 0;
-    $covsum   = 0.0;
-    $compsum  = 0.0;
-    foreach ($students as $uid => $stu) {
-        if ($totalmodules > 0) {
-            $covsum += (count($studentlog[$uid] ?? []) / $totalmodules) * 100;
+    // Class averages (anonymous aggregates) only when the comparison card is on.
+    $clsscore      = 0;
+    $clscoverage   = 0;
+    $clscompletion = 0;
+    if ($display['studentshowcomparison']) {
+        $clsscore = $riskscores ? (int)round(array_sum($riskscores) / count($riskscores)) : 0;
+        $covsum   = 0.0;
+        $compsum  = 0.0;
+        foreach ($students as $uid => $stu) {
+            if ($totalmodules > 0) {
+                $covsum += (count($studentlog[$uid] ?? []) / $totalmodules) * 100;
+            }
+            if ($hasanycompletion && $totaltracked > 0) {
+                $compsum += (($completedbystu[$uid] ?? 0) / $totaltracked) * 100;
+            }
         }
-        if ($hasanycompletion && $totaltracked > 0) {
-            $compsum += (($completedbystu[$uid] ?? 0) / $totaltracked) * 100;
-        }
+        $clscoverage   = $totalstudents > 0 ? (int)round($covsum / $totalstudents) : 0;
+        $clscompletion = $totalstudents > 0 ? (int)round($compsum / $totalstudents) : 0;
     }
-    $clscoverage   = $totalstudents > 0 ? (int)round($covsum / $totalstudents) : 0;
-    $clscompletion = $totalstudents > 0 ? (int)round($compsum / $totalstudents) : 0;
+
+    $showscore      = $display['studentshowscore'];
+    $showcoverage   = $display['studentshowcoverage'];
+    $showcompletion = $display['studentshowcompletion'] && $hasanycompletion;
+    $showdedication = $display['studentshowdedication'] && $hasdedication;
+    $showdaysinactive = $display['studentshowdaysinactive'];
+    $showcmpscore      = $display['studentshowcomparison'] && $showscore;
+    $showcmpcoverage   = $display['studentshowcomparison'] && $showcoverage;
+    $showcmpcompletion = $display['studentshowcomparison'] && $showcompletion;
+    $showcmpdedication = $display['studentshowcomparison'] && $showdedication;
+    $showcomparison    = $showcmpscore || $showcmpcoverage || $showcmpcompletion || $showcmpdedication;
+    $showpending    = $display['studentshowpending'];
+    $showchart      = $display['studentshowchart'];
+    $haskpis        = $showscore || $showcoverage || $showcompletion || $showdedication || $showdaysinactive;
 
     // Pending resources: visible to me, not yet visited, with a viewable URL.
     $myvisitedcms = $studentlog[$myid] ?? [];
     $pending      = [];
-    foreach ($validcms as $cmid => $cm) {
-        if (!$cm->uservisible || isset($myvisitedcms[$cmid]) || empty($cm->url)) {
-            continue;
+    if ($showpending) {
+        foreach ($validcms as $cmid => $cm) {
+            if (!$cm->uservisible || isset($myvisitedcms[$cmid]) || empty($cm->url)) {
+                continue;
+            }
+            $pending[] = [
+                'name' => $cm->get_formatted_name(),
+                'url'  => $cm->url->out(false),
+                'icon' => $cm->get_icon_url()->out(false),
+                'type' => get_string('pluginname', $cm->modname),
+            ];
         }
-        $pending[] = [
-            'name' => $cm->get_formatted_name(),
-            'url'  => $cm->url->out(false),
-            'icon' => $cm->get_icon_url()->out(false),
-            'type' => get_string('pluginname', $cm->modname),
-        ];
     }
 
     // My activity-over-time chart (daily, or weekly when the span exceeds 90 days).
     $stuchart = null;
-    if (!empty($myday)) {
+    if ($showchart && !empty($myday)) {
         $chfrom = $course->startdate ?: strtotime((string)min(array_keys($myday)));
         $chto   = time();
         $stulabels = [];
@@ -286,7 +321,22 @@ if ($isstudentview) {
 
     $templatecontext = [
         'coursename'    => format_string($course->fullname),
-        'hasdedication' => $hasdedication,
+        'haskpis'       => $haskpis,
+        'showscore'     => $showscore,
+        'showcoverage'  => $showcoverage,
+        'showcompletion' => $showcompletion,
+        'showdedication' => $showdedication,
+        'showdaysinactive' => $showdaysinactive,
+        'showcomparison' => $showcomparison,
+        'showcmpscore'  => $showcmpscore,
+        'showcmpcoverage' => $showcmpcoverage,
+        'showcmpcompletion' => $showcmpcompletion,
+        'showcmpdedication' => $showcmpdedication,
+        'showpending'   => $showpending,
+        'showchart'     => $showchart,
+        'pendingcolclass' => $showchart ? 'col-lg-6' : 'col-12',
+        'chartcolclass' => $showpending ? 'col-lg-6' : 'col-12',
+        'hasdedication' => $showdedication,
         'dedication'    => report_courseradar_format_dedication($mydedication),
         'dedicationpct' => (int)round(($mydedication / $dedmax) * 100),
         'classdedication'    => report_courseradar_format_dedication($clsdedication),
@@ -298,7 +348,7 @@ if ($isstudentview) {
         'coverage'      => $mycoverage,
         'coverageclass' => report_courseradar_barclass($mycoverage),
         'completion'    => $mycompletion,
-        'hascompletion' => $hasanycompletion,
+        'hascompletion' => $showcompletion,
         'daysinactive'  => $mydaystext,
         'classscore'    => $clsscore,
         'classcoverage' => $clscoverage,
@@ -309,7 +359,7 @@ if ($isstudentview) {
         'pending'       => $pending,
         'haspending'    => !empty($pending),
         'pendingcount'  => count($pending),
-        'allvisited'    => empty($pending) && $totalmodules > 0,
+        'allvisited'    => $showpending && empty($pending) && $totalmodules > 0,
         'charthtml'     => $stuchart ? $OUTPUT->render($stuchart) : '',
         'haschart'      => (bool)$stuchart,
     ];

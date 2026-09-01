@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for report_courseradar.
+ * Admin settings for report_courseradar.
  *
  * @package    report_courseradar
  * @copyright  2025 Sergio Comerón <sergiocomeron@icloud.com>
@@ -24,8 +24,29 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026090101;
-$plugin->requires  = 2024100700;
-$plugin->component = 'report_courseradar';
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '1.0.0';
+if ($ADMIN->fulltree) {
+    $settings->add(new admin_setting_heading(
+        'report_courseradar/studentviewheading',
+        get_string('studentviewheading', 'report_courseradar'),
+        get_string('studentviewheading_desc', 'report_courseradar')
+    ));
+
+    $checkboxes = [
+        'studentshowscore',
+        'studentshowcoverage',
+        'studentshowcompletion',
+        'studentshowdedication',
+        'studentshowdaysinactive',
+        'studentshowcomparison',
+        'studentshowpending',
+        'studentshowchart',
+    ];
+    foreach ($checkboxes as $name) {
+        $settings->add(new admin_setting_configcheckbox(
+            'report_courseradar/' . $name,
+            get_string($name, 'report_courseradar'),
+            get_string($name . '_desc', 'report_courseradar'),
+            1
+        ));
+    }
+}

@@ -355,3 +355,29 @@ function report_courseradar_top_unseen(
     });
     return array_slice($items, 0, $limit);
 }
+
+/**
+ * Student-view section flags from plugin settings.
+ *
+ * Unsaved config is treated as enabled, matching the checkbox defaults.
+ *
+ * @return array<string,bool>
+ */
+function report_courseradar_student_display(): array {
+    $keys = [
+        'studentshowscore',
+        'studentshowcoverage',
+        'studentshowcompletion',
+        'studentshowdedication',
+        'studentshowdaysinactive',
+        'studentshowcomparison',
+        'studentshowpending',
+        'studentshowchart',
+    ];
+    $out = [];
+    foreach ($keys as $key) {
+        $val = get_config('report_courseradar', $key);
+        $out[$key] = ($val === false) ? true : (bool)(int)$val;
+    }
+    return $out;
+}
