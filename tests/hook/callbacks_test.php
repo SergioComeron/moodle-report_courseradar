@@ -16,8 +16,6 @@
 
 namespace report_courseradar\hook;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Tests for report_courseradar secondary navigation hook.
  *
