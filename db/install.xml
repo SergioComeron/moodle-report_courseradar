@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="report/courseradar/db" VERSION="20260902" COMMENT="XMLDB file for report_courseradar"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <TABLE NAME="report_courseradar_conex" COMMENT="Cached Zoom/Vimeo connection totals per student and course">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timeasked" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" COMMENT="Last time this pair was requested in the report"/>
+        <FIELD NAME="timefetched" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" COMMENT="Last successful API fetch"/>
+        <FIELD NAME="livelabel" TYPE="char" LENGTH="50" NOTNULL="true" DEFAULT=""/>
+        <FIELD NAME="liveseconds" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="delayedlabel" TYPE="char" LENGTH="50" NOTNULL="true" DEFAULT=""/>
+        <FIELD NAME="delayedseconds" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="courseuser" UNIQUE="true" FIELDS="courseid, userid"/>
+        <INDEX NAME="timefetched" UNIQUE="false" FIELDS="timefetched"/>
+        <INDEX NAME="timeasked" UNIQUE="false" FIELDS="timeasked"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>

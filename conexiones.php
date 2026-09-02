@@ -49,6 +49,15 @@ if (!$canview) {
 }
 
 $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], '*', MUST_EXIST);
+$refresh = optional_param('refresh', 0, PARAM_BOOL);
 
 header('Content-Type: application/json; charset=utf-8');
-echo json_encode(\report_courseradar\conexiones_client::fetch_user($course, $user));
+
+$store = \report_courseradar\conexiones_store::class;
+$row   = $store::get($courseid, $userid);
+if (!$refresh && $store::is_fresh($row)) {
+    echo json_encode($store::export($row));
+    exit;
+}
+
+echo json_encode($store::refresh_user($course, $user));

@@ -152,6 +152,11 @@
     </div>
     {{/showconexiones}}
   </div>
+  {{#showconexiones}}
+    {{#conexionesupdated}}
+    <p class="small text-muted mb-4">{{conexionesupdated}}</p>
+    {{/conexionesupdated}}
+  {{/showconexiones}}
   {{/haskpis}}
 
   {{! Comparison with the class average }}

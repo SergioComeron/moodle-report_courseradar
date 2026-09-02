@@ -262,10 +262,23 @@ if ($isstudentview) {
 
     $conexioneslive    = null;
     $conexionesdelayed = null;
+    $conexionesupdated = '';
     if ($showconexiones) {
-        $conex = \report_courseradar\conexiones_client::fetch_user($course, $USER);
-        $conexioneslive    = $conex['live'];
-        $conexionesdelayed = $conex['delayed'];
+        $stored = \report_courseradar\conexiones_store::get($courseid, $myid);
+        if (\report_courseradar\conexiones_store::is_fresh($stored)) {
+            $export = \report_courseradar\conexiones_store::export($stored);
+        } else {
+            $export = \report_courseradar\conexiones_store::refresh_user($course, $USER);
+        }
+        $conexioneslive    = $export['live'];
+        $conexionesdelayed = $export['delayed'];
+        if (!empty($export['timefetched'])) {
+            $conexionesupdated = get_string(
+                'conexionesupdated',
+                'report_courseradar',
+                userdate((int)$export['timefetched'], get_string('strftimetime', 'langconfig'))
+            );
+        }
     }
 
     // Pending resources: visible to me, not yet visited, with a viewable URL.
@@ -351,6 +364,7 @@ if ($isstudentview) {
         'conexionesliverows' => $conexioneslive['rows'] ?? [],
         'conexionesdelayedrows' => $conexionesdelayed['rows'] ?? [],
         'hasconexionesrows' => !empty($conexioneslive['rows']) || !empty($conexionesdelayed['rows']),
+        'conexionesupdated' => $conexionesupdated,
         'pendingcolclass' => $showchart ? 'col-lg-6' : 'col-12',
         'chartcolclass' => $showpending ? 'col-lg-6' : 'col-12',
         'hasdedication' => $showdedication,
@@ -913,6 +927,17 @@ $rescols = $hasanycompletion ? 8 : 7;
 // Number of student table columns (base 9, plus completion and time-spent columns).
 $hasconexiones = \report_courseradar\conexiones_client::is_configured();
 $stucols = 9 + ($hasanycompletion ? 1 : 0) + ($hasdedication ? 1 : 0) + ($hasconexiones ? 2 : 0);
+$conexrows = [];
+$conexlatest = 0;
+if ($hasconexiones && !empty($students)) {
+    $conexrows = \report_courseradar\conexiones_store::get_course($courseid);
+    \report_courseradar\conexiones_store::ask_many($courseid, array_keys($students));
+    foreach ($conexrows as $crow) {
+        if ((int)$crow->timefetched > $conexlatest) {
+            $conexlatest = (int)$crow->timefetched;
+        }
+    }
+}
 
 // Output.
 echo $OUTPUT->header();
@@ -943,6 +968,12 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-act-icon.cr-act-done .cr-act-cnt { background:#198754; }
 .cr-act-grid          { display:flex; flex-wrap:wrap; gap:3px; }
 .cr-zero              { color: #adb5bd; }
+.cr-conex-updating    { opacity: .45; }
+@keyframes cr-conex-flash {
+  from { background-color: #d1e7dd; }
+  to   { background-color: transparent; }
+}
+.cr-conex-flash       { animation: cr-conex-flash .3s ease-out; }
 /* Alumnos en riesgo */
 .cr-risk-names        { max-height: 180px; overflow-y: auto; columns: 2; column-gap: 1rem; }
 .cr-risk-names a      { display: block; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1060,46 +1091,116 @@ function crLoadConexiones() {
     }
     var courseid = <?php echo (int)$courseid; ?>;
     var sesskey = (typeof M !== 'undefined' && M.cfg) ? M.cfg.sesskey : '';
-    var queue = Array.prototype.slice.call(cells);
+    var queue = [];
     var inflight = 0;
-    function next() {
-        if (!queue.length || inflight >= 3) {
+    var pending = 0;
+
+    function setStatusUpdating() {
+        var el = document.getElementById('cr-conex-status');
+        if (!el) {
             return;
         }
-        var cell = queue.shift();
+        pending++;
+        el.textContent = el.getAttribute('data-updating') || '';
+    }
+    function setStatusDone(ts) {
+        var el = document.getElementById('cr-conex-status');
+        if (!el) {
+            return;
+        }
+        pending = Math.max(0, pending - 1);
+        if (pending > 0) {
+            return;
+        }
+        var tpl = el.getAttribute('data-updated') || '{$a}';
+        var when = ts ? new Date(ts * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
+        el.textContent = tpl.replace('{$a}', when);
+    }
+    function paintCell(cell, label, seconds, changed) {
+        if (!cell) {
+            return;
+        }
+        cell.textContent = label;
+        cell.setAttribute('data-sort', seconds);
+        cell.classList.remove('cr-conex-updating', 'text-muted');
+        if (label && label !== '…') {
+            cell.classList.add('fw-semibold');
+        }
+        if (changed) {
+            cell.classList.remove('cr-conex-flash');
+            void cell.offsetWidth;
+            cell.classList.add('cr-conex-flash');
+        }
+    }
+    function fetchOne(cell) {
         inflight++;
         var uid = cell.getAttribute('data-cr-conexiones');
+        var liveCell = document.querySelector('[data-cr-conexiones-live="' + uid + '"]');
+        var delayedCell = document.querySelector('[data-cr-conexiones-delayed="' + uid + '"]');
+        var oldLive = liveCell ? liveCell.textContent : '';
+        var oldDelayed = delayedCell ? delayedCell.textContent : '';
+        if (liveCell) { liveCell.classList.add('cr-conex-updating'); }
+        if (delayedCell) { delayedCell.classList.add('cr-conex-updating'); }
+        setStatusUpdating();
         var url = M.cfg.wwwroot + '/report/courseradar/conexiones.php'
-            + '?id=' + courseid + '&userid=' + uid + '&sesskey=' + encodeURIComponent(sesskey);
+            + '?id=' + courseid + '&userid=' + uid + '&refresh=1&sesskey=' + encodeURIComponent(sesskey);
         fetch(url, {credentials: 'same-origin'})
             .then(function(r) { return r.json(); })
             .then(function(data) {
-                var live = (data.live && data.live.label) ? data.live.label : '-';
-                var delayed = (data.delayed && data.delayed.label) ? data.delayed.label : '-';
-                var liveCell = document.querySelector('[data-cr-conexiones-live="' + uid + '"]');
-                var delayedCell = document.querySelector('[data-cr-conexiones-delayed="' + uid + '"]');
-                if (liveCell) {
-                    liveCell.textContent = live;
-                    liveCell.setAttribute('data-sort', (data.live && data.live.seconds) ? data.live.seconds : 0);
-                }
-                if (delayedCell) {
-                    delayedCell.textContent = delayed;
-                    delayedCell.setAttribute('data-sort', (data.delayed && data.delayed.seconds) ? data.delayed.seconds : 0);
-                }
+                var live = (data.live && data.live.label) ? data.live.label : '–';
+                var delayed = (data.delayed && data.delayed.label) ? data.delayed.label : '–';
+                paintCell(liveCell, live, (data.live && data.live.seconds) ? data.live.seconds : 0, live !== oldLive);
+                paintCell(delayedCell, delayed, (data.delayed && data.delayed.seconds) ? data.delayed.seconds : 0,
+                    delayed !== oldDelayed);
+                if (liveCell) { liveCell.setAttribute('data-cr-fresh', '1'); }
+                setStatusDone(data.timefetched || 0);
             })
             .catch(function() {
-                var liveCell = document.querySelector('[data-cr-conexiones-live="' + uid + '"]');
-                var delayedCell = document.querySelector('[data-cr-conexiones-delayed="' + uid + '"]');
-                if (liveCell) { liveCell.textContent = '–'; }
-                if (delayedCell) { delayedCell.textContent = '–'; }
+                if (liveCell) { liveCell.classList.remove('cr-conex-updating'); }
+                if (delayedCell) { delayedCell.classList.remove('cr-conex-updating'); }
+                setStatusDone(0);
             })
             .then(function() {
                 inflight--;
                 next();
             });
+    }
+    function next() {
+        while (queue.length && inflight < 3) {
+            fetchOne(queue.shift());
+        }
+    }
+    function enqueue(cell) {
+        if (cell.getAttribute('data-cr-queued') === '1') {
+            return;
+        }
+        cell.setAttribute('data-cr-queued', '1');
+        queue.push(cell);
         next();
     }
-    next();
+
+    if ('IntersectionObserver' in window) {
+        var io = new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+                if (!entry.isIntersecting) {
+                    return;
+                }
+                var cell = entry.target;
+                io.unobserve(cell);
+                if (cell.getAttribute('data-cr-fresh') === '1') {
+                    return;
+                }
+                enqueue(cell);
+            });
+        }, {rootMargin: '80px'});
+        cells.forEach(function(cell) { io.observe(cell); });
+    } else {
+        cells.forEach(function(cell) {
+            if (cell.getAttribute('data-cr-fresh') !== '1') {
+                enqueue(cell);
+            }
+        });
+    }
 }
 
 /* ── Toggle fila de detalle ────────────────────────────────────────────────── */
@@ -2348,6 +2449,20 @@ function crDrawScatter() {
       <span class="badge bg-secondary ms-2"><?php echo $totalstudents; ?></span>
     </h5>
     <small class="text-muted"><?php echo get_string('studentengagement_desc', 'report_courseradar'); ?></small>
+    <?php if ($hasconexiones): ?>
+    <div class="small text-muted mt-1" id="cr-conex-status"
+         data-updating="<?php echo s(get_string('conexionesupdating', 'report_courseradar')); ?>"
+         data-updated="<?php echo s(get_string('conexionesupdated', 'report_courseradar')); ?>">
+      <?php
+        if ($conexlatest) {
+            echo get_string('conexionesupdated', 'report_courseradar',
+                userdate($conexlatest, get_string('strftimetime', 'langconfig')));
+        } else {
+            echo get_string('conexionesupdating', 'report_courseradar');
+        }
+      ?>
+    </div>
+    <?php endif; ?>
   </div>
   <?php if ($totalstudents > 5): ?>
   <div class="px-3 pt-3 pb-2 border-bottom">
@@ -2534,14 +2649,22 @@ function crDrawScatter() {
               <?php echo report_courseradar_format_dedication($dedsecs); ?>
             </td>
             <?php endif; ?>
-            <?php if ($hasconexiones): ?>
-            <td class="text-center text-muted"
+            <?php if ($hasconexiones):
+                $crow = $conexrows[$uid] ?? null;
+                $conexfresh = \report_courseradar\conexiones_store::is_fresh($crow);
+                $livelabel = ($crow && $crow->livelabel !== '') ? $crow->livelabel : '…';
+                $delayedlabel = ($crow && $crow->delayedlabel !== '') ? $crow->delayedlabel : '…';
+                $livesecs = $crow ? (int)$crow->liveseconds : 0;
+                $delayedsecs = $crow ? (int)$crow->delayedseconds : 0;
+            ?>
+            <td class="text-center <?php echo ($crow && $crow->livelabel !== '') ? 'fw-semibold' : 'text-muted'; ?>"
                 data-cr-conexiones="<?php echo (int)$uid; ?>"
                 data-cr-conexiones-live="<?php echo (int)$uid; ?>"
-                data-sort="0">…</td>
-            <td class="text-center text-muted"
+                data-cr-fresh="<?php echo $conexfresh ? '1' : '0'; ?>"
+                data-sort="<?php echo $livesecs; ?>"><?php echo s($livelabel); ?></td>
+            <td class="text-center <?php echo ($crow && $crow->delayedlabel !== '') ? 'fw-semibold' : 'text-muted'; ?>"
                 data-cr-conexiones-delayed="<?php echo (int)$uid; ?>"
-                data-sort="0">…</td>
+                data-sort="<?php echo $delayedsecs; ?>"><?php echo s($delayedlabel); ?></td>
             <?php endif; ?>
 
             <?php $lastcv = $lastcoursevisit[$uid] ?? 0; ?>

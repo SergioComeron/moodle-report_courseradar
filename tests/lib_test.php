@@ -38,6 +38,7 @@ require_once($CFG->dirroot . '/report/courseradar/locallib.php');
  * @covers     \report_courseradar_format_dedication
  * @covers     \report_courseradar_student_display
  * @covers     \report_courseradar\conexiones_client
+ * @covers     \report_courseradar\conexiones_store
  */
 final class lib_test extends \advanced_testcase {
     // Tests for report_courseradar_barclass.
@@ -660,6 +661,32 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
+     * Real UDIMA payload (datosInforme + Asistencias + TiempoVimeo) is summarised.
+     */
+    public function test_conexiones_summarise_datos_informe_asistencias(): void {
+        $data = [
+            'correcto' => true,
+            'datosInforme' => [
+                'General' => [
+                    'Horas' => "0h 0'",
+                    'HorasVimeo' => "5h 43'",
+                    'Duracion' => 0,
+                ],
+                'Asistencias' => [
+                    ['Dia' => '30/09/2025', 'TiempoVimeo' => '00:51:34'],
+                    ['Dia' => '07/10/2025', 'TiempoVimeo' => '00:14:07'],
+                ],
+                'Conexiones' => [],
+            ],
+        ];
+        $out = \report_courseradar\conexiones_client::summarise($data);
+        $this->assertTrue($out['ok']);
+        $this->assertSame(2, $out['count']);
+        $this->assertSame(3094 + 847, $out['seconds']);
+        $this->assertSame('30/09/2025', $out['rows'][0]['when']);
+    }
+
+    /**
      * Empty or unknown payload does not throw and reports zero.
      */
     public function test_conexiones_summarise_empty(): void {
@@ -676,5 +703,27 @@ final class lib_test extends \advanced_testcase {
         $this->resetAfterTest();
         set_config('reusezoomapi', 0, 'report_courseradar');
         $this->assertFalse(\report_courseradar\conexiones_client::is_configured());
+    }
+
+    /**
+     * Queue rows are created and freshness follows TTL.
+     */
+    public function test_conexiones_store_ask_and_freshness(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $user   = $this->getDataGenerator()->create_user();
+        \report_courseradar\conexiones_store::ask_many((int)$course->id, [(int)$user->id]);
+        $row = \report_courseradar\conexiones_store::get((int)$course->id, (int)$user->id);
+        $this->assertNotNull($row);
+        $this->assertFalse(\report_courseradar\conexiones_store::is_fresh($row));
+        $row->timefetched = time();
+        $row->livelabel = '1h';
+        \report_courseradar\conexiones_store::save((int)$course->id, (int)$user->id, [
+            'live'    => ['ok' => true, 'label' => '1h', 'seconds' => 3600],
+            'delayed' => ['ok' => true, 'label' => '0', 'seconds' => 0],
+        ]);
+        $fresh = \report_courseradar\conexiones_store::get((int)$course->id, (int)$user->id);
+        $this->assertTrue(\report_courseradar\conexiones_store::is_fresh($fresh));
+        $this->assertSame('1h', $fresh->livelabel);
     }
 }

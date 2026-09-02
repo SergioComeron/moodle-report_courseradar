@@ -56,12 +56,13 @@ class conexiones_client {
      *
      * @param \stdClass $course Course record.
      * @param \stdClass $user User record (needs username / idnumber).
+     * @param bool $force Skip the short-lived MUC cache.
      * @return array{live: array, delayed: array}
      */
-    public static function fetch_user(\stdClass $course, \stdClass $user): array {
+    public static function fetch_user(\stdClass $course, \stdClass $user, bool $force = false): array {
         return [
-            'live'    => self::fetch_tipo($course, $user, self::TIPO_DIRECTO),
-            'delayed' => self::fetch_tipo($course, $user, self::TIPO_DIFERIDO),
+            'live'    => self::fetch_tipo($course, $user, self::TIPO_DIRECTO, $force),
+            'delayed' => self::fetch_tipo($course, $user, self::TIPO_DIFERIDO, $force),
         ];
     }
 
@@ -71,9 +72,10 @@ class conexiones_client {
      * @param \stdClass $course Course record.
      * @param \stdClass $user User record.
      * @param int $tipo 1 or 2.
+     * @param bool $force Skip the short-lived MUC cache.
      * @return array Summarised payload.
      */
-    public static function fetch_tipo(\stdClass $course, \stdClass $user, int $tipo): array {
+    public static function fetch_tipo(\stdClass $course, \stdClass $user, int $tipo, bool $force = false): array {
         $empty = [
             'ok'      => false,
             'label'   => '-',
@@ -92,10 +94,12 @@ class conexiones_client {
         }
 
         $cache    = \cache::make('report_courseradar', 'conexiones');
-        $cachekey = $course->id . '_' . $user->id . '_' . $tipo;
-        $cached   = $cache->get($cachekey);
-        if (is_array($cached) && isset($cached['ok'])) {
-            return $cached;
+        $cachekey = $course->id . '_' . $user->id . '_' . $tipo . '_v2';
+        if (!$force) {
+            $cached = $cache->get($cachekey);
+            if (is_array($cached) && isset($cached['ok'])) {
+                return $cached;
+            }
         }
 
         $campus  = self::campus_info();
@@ -171,7 +175,15 @@ class conexiones_client {
             return $out;
         }
 
-        $rootseconds = self::extract_seconds($data);
+        if (isset($data['datosInforme']) && is_array($data['datosInforme'])) {
+            $data = $data['datosInforme'];
+        }
+
+        $generalseconds = 0;
+        if (isset($data['General']) && is_array($data['General'])) {
+            $generalseconds = self::extract_seconds($data['General']);
+        }
+        $rootseconds = max($generalseconds, self::extract_seconds($data));
         $list        = self::extract_list($data);
         $seconds     = 0;
         $rows        = [];
@@ -181,11 +193,13 @@ class conexiones_client {
             }
             $secs = self::extract_seconds($item);
             $seconds += $secs;
+            $when  = self::first_string($item, ['Dia', 'Fecha', 'FechaInicio', 'FechaSesion', 'Date']);
+            $title = self::first_string($item, [
+                'Sesion', 'Sesión', 'Titulo', 'Título', 'Nombre', 'Descripcion', 'Descripción',
+            ]);
             $rows[] = [
-                'title'    => self::first_string($item, [
-                    'Sesion', 'Sesión', 'Titulo', 'Título', 'Nombre', 'Descripcion', 'Descripción',
-                ]),
-                'when'     => self::first_string($item, ['Fecha', 'FechaInicio', 'FechaSesion', 'Date']),
+                'title'    => $title !== '' ? $title : $when,
+                'when'     => $when,
                 'duration' => $secs > 0 ? \report_courseradar_format_dedication($secs) : '',
             ];
         }
@@ -378,7 +392,8 @@ class conexiones_client {
             return $data;
         }
         $keys = [
-            'Sesiones', 'sesiones', 'Conexiones', 'conexiones', 'Informe', 'informe',
+            'Asistencias', 'asistencias', 'Sesiones', 'sesiones',
+            'Conexiones', 'conexiones', 'Informe', 'informe',
             'Items', 'items', 'Resultado', 'resultado', 'data', 'Data',
         ];
         foreach ($keys as $key) {
@@ -419,17 +434,19 @@ class conexiones_client {
             if (is_array($value)) {
                 continue;
             }
-            if (is_string($value) && preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $value)) {
-                $parts = array_map('intval', explode(':', $value));
-                if (count($parts) === 3) {
-                    return $parts[0] * 3600 + $parts[1] * 60 + $parts[2];
+            if (is_string($value)) {
+                $parsed = self::parse_duration_string($value);
+                if ($parsed !== null) {
+                    return $parsed;
                 }
-                return $parts[0] * 60 + $parts[1];
             }
             if (!is_numeric($value)) {
                 continue;
             }
             $num = (float)$value;
+            if ($num <= 0) {
+                continue;
+            }
             if (strpos($k, 'min') !== false) {
                 return (int)round($num * 60);
             }
@@ -446,6 +463,27 @@ class conexiones_client {
             }
         }
         return 0;
+    }
+
+    /**
+     * Parse HH:MM:SS or "5h 43'" into seconds.
+     *
+     * @param string $value
+     * @return int|null
+     */
+    private static function parse_duration_string(string $value): ?int {
+        $value = trim($value);
+        if (preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $value)) {
+            $parts = array_map('intval', explode(':', $value));
+            if (count($parts) === 3) {
+                return $parts[0] * 3600 + $parts[1] * 60 + $parts[2];
+            }
+            return $parts[0] * 60 + $parts[1];
+        }
+        if (preg_match("/^(\d+)\s*h\s*(\d+)\s*['m]?$/iu", $value, $m)) {
+            return ((int)$m[1] * 3600) + ((int)$m[2] * 60);
+        }
+        return null;
     }
 
     /**
