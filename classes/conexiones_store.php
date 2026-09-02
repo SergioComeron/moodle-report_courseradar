@@ -34,6 +34,16 @@ class conexiones_store {
     public const KEEP = 14 * DAYSECS;
 
     /**
+     * Whether the cache table exists (false until Notifications upgrade).
+     *
+     * @return bool
+     */
+    public static function table_exists(): bool {
+        global $DB;
+        return $DB->get_manager()->table_exists('report_courseradar_conex');
+    }
+
+    /**
      * Mark students as requested so the cron will fill missing rows.
      *
      * @param int $courseid
@@ -41,6 +51,9 @@ class conexiones_store {
      */
     public static function ask_many(int $courseid, array $userids): void {
         global $DB;
+        if (!self::table_exists()) {
+            return;
+        }
         $now = time();
         foreach ($userids as $userid) {
             $userid = (int)$userid;
@@ -75,6 +88,9 @@ class conexiones_store {
      */
     public static function get(int $courseid, int $userid): ?\stdClass {
         global $DB;
+        if (!self::table_exists()) {
+            return null;
+        }
         $row = $DB->get_record('report_courseradar_conex', [
             'courseid' => $courseid,
             'userid'   => $userid,
@@ -90,6 +106,9 @@ class conexiones_store {
      */
     public static function get_course(int $courseid): array {
         global $DB;
+        if (!self::table_exists()) {
+            return [];
+        }
         $records = $DB->get_records('report_courseradar_conex', ['courseid' => $courseid]);
         $out = [];
         foreach ($records as $row) {
@@ -120,6 +139,9 @@ class conexiones_store {
      */
     public static function save(int $courseid, int $userid, array $data): void {
         global $DB;
+        if (!self::table_exists()) {
+            return;
+        }
         $now = time();
         $row = $DB->get_record('report_courseradar_conex', [
             'courseid' => $courseid,
@@ -203,6 +225,9 @@ class conexiones_store {
      */
     public static function process_queue(int $limit = self::TASK_LIMIT): int {
         global $DB;
+        if (!self::table_exists()) {
+            return 0;
+        }
 
         $DB->delete_records_select(
             'report_courseradar_conex',
