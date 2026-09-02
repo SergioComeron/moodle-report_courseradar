@@ -2652,17 +2652,17 @@ function crDrawScatter() {
             <?php if ($hasconexiones):
                 $crow = $conexrows[$uid] ?? null;
                 $conexfresh = \report_courseradar\conexiones_store::is_fresh($crow);
-                $livelabel = ($crow && $crow->livelabel !== '') ? $crow->livelabel : '…';
-                $delayedlabel = ($crow && $crow->delayedlabel !== '') ? $crow->delayedlabel : '…';
+                $livelabel = ($crow && (string)$crow->livelabel !== '') ? $crow->livelabel : '…';
+                $delayedlabel = ($crow && (string)$crow->delayedlabel !== '') ? $crow->delayedlabel : '…';
                 $livesecs = $crow ? (int)$crow->liveseconds : 0;
                 $delayedsecs = $crow ? (int)$crow->delayedseconds : 0;
             ?>
-            <td class="text-center <?php echo ($crow && $crow->livelabel !== '') ? 'fw-semibold' : 'text-muted'; ?>"
+            <td class="text-center <?php echo ($crow && (string)$crow->livelabel !== '') ? 'fw-semibold' : 'text-muted'; ?>"
                 data-cr-conexiones="<?php echo (int)$uid; ?>"
                 data-cr-conexiones-live="<?php echo (int)$uid; ?>"
                 data-cr-fresh="<?php echo $conexfresh ? '1' : '0'; ?>"
                 data-sort="<?php echo $livesecs; ?>"><?php echo s($livelabel); ?></td>
-            <td class="text-center <?php echo ($crow && $crow->delayedlabel !== '') ? 'fw-semibold' : 'text-muted'; ?>"
+            <td class="text-center <?php echo ($crow && (string)$crow->delayedlabel !== '') ? 'fw-semibold' : 'text-muted'; ?>"
                 data-cr-conexiones-delayed="<?php echo (int)$uid; ?>"
                 data-sort="<?php echo $delayedsecs; ?>"><?php echo s($delayedlabel); ?></td>
             <?php endif; ?>

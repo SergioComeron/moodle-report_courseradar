@@ -11,9 +11,9 @@
         <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="timeasked" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" COMMENT="Last time this pair was requested in the report"/>
         <FIELD NAME="timefetched" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" COMMENT="Last successful API fetch"/>
-        <FIELD NAME="livelabel" TYPE="char" LENGTH="50" NOTNULL="true" DEFAULT=""/>
+        <FIELD NAME="livelabel" TYPE="char" LENGTH="50" NOTNULL="false"/>
         <FIELD NAME="liveseconds" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
-        <FIELD NAME="delayedlabel" TYPE="char" LENGTH="50" NOTNULL="true" DEFAULT=""/>
+        <FIELD NAME="delayedlabel" TYPE="char" LENGTH="50" NOTNULL="false"/>
         <FIELD NAME="delayedseconds" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
       </FIELDS>
       <KEYS>

@@ -43,9 +43,9 @@ function xmldb_report_courseradar_upgrade($oldversion): bool {
         $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
         $table->add_field('timeasked', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
         $table->add_field('timefetched', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
-        $table->add_field('livelabel', XMLDB_TYPE_CHAR, '50', null, XMLDB_NOTNULL, null, '');
+        $table->add_field('livelabel', XMLDB_TYPE_CHAR, '50');
         $table->add_field('liveseconds', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
-        $table->add_field('delayedlabel', XMLDB_TYPE_CHAR, '50', null, XMLDB_NOTNULL, null, '');
+        $table->add_field('delayedlabel', XMLDB_TYPE_CHAR, '50');
         $table->add_field('delayedseconds', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
 
         $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
@@ -58,6 +58,18 @@ function xmldb_report_courseradar_upgrade($oldversion): bool {
         }
 
         upgrade_plugin_savepoint(true, 2026090200, 'report', 'courseradar');
+    }
+
+    if ($oldversion < 2026090201) {
+        $table = new xmldb_table('report_courseradar_conex');
+        if ($dbman->table_exists($table)) {
+            $field = new xmldb_field('livelabel', XMLDB_TYPE_CHAR, '50');
+            $dbman->change_field_notnull($table, $field);
+            $field = new xmldb_field('delayedlabel', XMLDB_TYPE_CHAR, '50');
+            $dbman->change_field_notnull($table, $field);
+        }
+
+        upgrade_plugin_savepoint(true, 2026090201, 'report', 'courseradar');
     }
 
     return true;

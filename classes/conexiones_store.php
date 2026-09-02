@@ -164,8 +164,8 @@ class conexiones_store {
      */
     public static function export(?\stdClass $row): array {
         $fetched = $row ? (int)$row->timefetched : 0;
-        $live = $row && $row->livelabel !== '' ? (string)$row->livelabel : '…';
-        $delayed = $row && $row->delayedlabel !== '' ? (string)$row->delayedlabel : '…';
+        $live = ($row && (string)$row->livelabel !== '') ? (string)$row->livelabel : '…';
+        $delayed = ($row && (string)$row->delayedlabel !== '') ? (string)$row->delayedlabel : '…';
         return [
             'live' => [
                 'ok'      => $fetched > 0,
