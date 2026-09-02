@@ -214,7 +214,27 @@ class conexiones_store {
     public static function refresh_user(\stdClass $course, \stdClass $user): array {
         $data = conexiones_client::fetch_user($course, $user, true);
         self::save((int)$course->id, (int)$user->id, $data);
-        return self::export(self::get((int)$course->id, (int)$user->id));
+        $out = self::export(self::get((int)$course->id, (int)$user->id));
+        $out['table'] = self::table_exists();
+        $out['live'] = [
+            'ok'      => !empty($data['live']['ok']),
+            'label'   => (string)($data['live']['label'] ?? $out['live']['label']),
+            'seconds' => (int)($data['live']['seconds'] ?? 0),
+            'error'   => (string)($data['live']['error'] ?? ''),
+            'request' => $data['live']['request'] ?? null,
+        ];
+        $out['delayed'] = [
+            'ok'      => !empty($data['delayed']['ok']),
+            'label'   => (string)($data['delayed']['label'] ?? $out['delayed']['label']),
+            'seconds' => (int)($data['delayed']['seconds'] ?? 0),
+            'error'   => (string)($data['delayed']['error'] ?? ''),
+            'request' => $data['delayed']['request'] ?? null,
+        ];
+        if (!empty($data['live']['ok']) || !empty($data['delayed']['ok'])) {
+            $out['timefetched'] = time();
+            $out['stale'] = false;
+        }
+        return $out;
     }
 
     /**

@@ -95,5 +95,27 @@ function xmldb_report_courseradar_upgrade($oldversion): bool {
         upgrade_plugin_savepoint(true, 2026090204, 'report', 'courseradar');
     }
 
+    // 1.9.4 ZIP already stored version 2026090204 without creating the table.
+    if ($oldversion < 2026090206) {
+        $table = new xmldb_table('report_courseradar_conex');
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+            $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timeasked', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timefetched', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('livelabel', XMLDB_TYPE_CHAR, '50');
+            $table->add_field('liveseconds', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('delayedlabel', XMLDB_TYPE_CHAR, '50');
+            $table->add_field('delayedseconds', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('courseuser', XMLDB_INDEX_UNIQUE, ['courseid', 'userid']);
+            $table->add_index('timefetched', XMLDB_INDEX_NOTUNIQUE, ['timefetched']);
+            $table->add_index('timeasked', XMLDB_INDEX_NOTUNIQUE, ['timeasked']);
+            $dbman->create_table($table);
+        }
+        upgrade_plugin_savepoint(true, 2026090206, 'report', 'courseradar');
+    }
+
     return true;
 }
