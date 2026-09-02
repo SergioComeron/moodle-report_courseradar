@@ -134,6 +134,8 @@ $string['scatter_desc']        = 'Cada punto representa un alumno. Eje X: % de r
 $string['scatter_title']       = 'Comparativa de alumnos: recursos vs. participación';
 $string['scatter_xaxis']       = '% Recursos visitados';
 $string['scatter_yaxis']       = 'Puntuación de participación';
+$string['scope']               = 'OAuth scope';
+$string['scope_desc']          = 'Opcional si se reutilizan las credenciales de Zoom UDIMA.';
 $string['scoredist_desc']       = 'Cada barra muestra cuántos alumnos tienen esa puntuación. La puntuación (0–100) combina tres factores: % de recursos visitados, días desde el último acceso y completación de actividades (si está activada). Un alumno que ha visitado pocos recursos pero entró ayer puntúa más alto que otro con la misma cobertura que lleva semanas sin aparecer.';
 $string['scoredist_title']      = 'Distribución de la puntuación de participación';
 $string['scorehelp_completion']    = '% de actividades con seguimiento completadas (solo se cuenta si la finalización de actividades está activada).';
@@ -144,8 +146,6 @@ $string['scorehelp_formula_full']  = 'puntuación = 0,35 × recursos + 0,35 × a
 $string['scorehelp_recency']       = 'Actividad reciente: 100 si entró hoy, descendiendo de forma lineal hasta 0 a los 30 días de inactividad (0 si el alumno nunca ha interactuado).';
 $string['scorehelp_resources']     = '% de recursos distintos del curso que ha visitado el alumno.';
 $string['scorehelp_title']         = '¿Cómo se calcula la puntuación de participación?';
-$string['scope']               = 'OAuth scope';
-$string['scope_desc']          = 'Opcional si se reutilizan las credenciales de Zoom UDIMA.';
 $string['searchstudent']       = 'Buscar alumno...';
 $string['sendmsg']             = 'Enviar mensaje';
 $string['showhidden']          = 'Mostrar actividades ocultas';

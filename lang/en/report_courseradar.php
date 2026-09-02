@@ -134,6 +134,8 @@ $string['scatter_desc']        = 'Each dot is a student. X axis: % resources vis
 $string['scatter_title']       = 'Student comparison: resources vs. engagement';
 $string['scatter_xaxis']       = '% Resources visited';
 $string['scatter_yaxis']       = 'Engagement score';
+$string['scope']               = 'OAuth scope';
+$string['scope_desc']          = 'Optional if Zoom UDIMA credentials are reused.';
 $string['scoredist_desc']       = 'Each bar shows how many students fall in that score band. The score (0–100) combines three factors: % of resources visited, days since last access, and activity completion (if enabled). A student who visits few resources but logged in recently scores higher than one who visited the same resources weeks ago.';
 $string['scoredist_title']      = 'Engagement score distribution';
 $string['scorehelp_completion']    = '% of tracked activities completed (only counted when completion tracking is enabled).';
@@ -144,8 +146,6 @@ $string['scorehelp_formula_full']  = 'score = 0.35 × resources + 0.35 × recenc
 $string['scorehelp_recency']       = 'Recency of last access: 100 if active today, decreasing linearly to 0 at 30 days of inactivity (0 if the student has never interacted).';
 $string['scorehelp_resources']     = '% of distinct course resources the student has visited.';
 $string['scorehelp_title']         = 'How is the engagement score calculated?';
-$string['scope']               = 'OAuth scope';
-$string['scope_desc']          = 'Optional if Zoom UDIMA credentials are reused.';
 $string['searchstudent']       = 'Search student...';
 $string['sendmsg']             = 'Send message';
 $string['showhidden']          = 'Show hidden activities';
