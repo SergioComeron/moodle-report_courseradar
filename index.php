@@ -255,7 +255,18 @@ if ($isstudentview) {
     $showcomparison    = $showcmpscore || $showcmpcoverage || $showcmpcompletion || $showcmpdedication;
     $showpending    = $display['studentshowpending'];
     $showchart      = $display['studentshowchart'];
-    $haskpis        = $showscore || $showcoverage || $showcompletion || $showdedication || $showdaysinactive;
+    $showconexiones = $display['studentshowconexiones']
+        && \report_courseradar\conexiones_client::is_configured();
+    $haskpis        = $showscore || $showcoverage || $showcompletion || $showdedication
+        || $showdaysinactive || $showconexiones;
+
+    $conexioneslive    = null;
+    $conexionesdelayed = null;
+    if ($showconexiones) {
+        $conex = \report_courseradar\conexiones_client::fetch_user($course, $USER);
+        $conexioneslive    = $conex['live'];
+        $conexionesdelayed = $conex['delayed'];
+    }
 
     // Pending resources: visible to me, not yet visited, with a viewable URL.
     $myvisitedcms = $studentlog[$myid] ?? [];
@@ -334,6 +345,12 @@ if ($isstudentview) {
         'showcmpdedication' => $showcmpdedication,
         'showpending'   => $showpending,
         'showchart'     => $showchart,
+        'showconexiones' => $showconexiones,
+        'conexioneslive' => $conexioneslive['label'] ?? '-',
+        'conexionesdelayed' => $conexionesdelayed['label'] ?? '-',
+        'conexionesliverows' => $conexioneslive['rows'] ?? [],
+        'conexionesdelayedrows' => $conexionesdelayed['rows'] ?? [],
+        'hasconexionesrows' => !empty($conexioneslive['rows']) || !empty($conexionesdelayed['rows']),
         'pendingcolclass' => $showchart ? 'col-lg-6' : 'col-12',
         'chartcolclass' => $showpending ? 'col-lg-6' : 'col-12',
         'hasdedication' => $showdedication,
@@ -894,7 +911,8 @@ foreach ($validcms as $cm) {
 // Number of resource table columns (varies when completion is enabled).
 $rescols = $hasanycompletion ? 8 : 7;
 // Number of student table columns (base 9, plus completion and time-spent columns).
-$stucols = 9 + ($hasanycompletion ? 1 : 0) + ($hasdedication ? 1 : 0);
+$hasconexiones = \report_courseradar\conexiones_client::is_configured();
+$stucols = 9 + ($hasanycompletion ? 1 : 0) + ($hasdedication ? 1 : 0) + ($hasconexiones ? 2 : 0);
 
 // Output.
 echo $OUTPUT->header();
@@ -1032,7 +1050,57 @@ document.addEventListener('DOMContentLoaded', function() {
             new bootstrap.Tooltip(el);
         });
     }
+    crLoadConexiones();
 });
+
+function crLoadConexiones() {
+    var cells = document.querySelectorAll('[data-cr-conexiones]');
+    if (!cells.length) {
+        return;
+    }
+    var courseid = <?php echo (int)$courseid; ?>;
+    var sesskey = (typeof M !== 'undefined' && M.cfg) ? M.cfg.sesskey : '';
+    var queue = Array.prototype.slice.call(cells);
+    var inflight = 0;
+    function next() {
+        if (!queue.length || inflight >= 3) {
+            return;
+        }
+        var cell = queue.shift();
+        inflight++;
+        var uid = cell.getAttribute('data-cr-conexiones');
+        var url = M.cfg.wwwroot + '/report/courseradar/conexiones.php'
+            + '?id=' + courseid + '&userid=' + uid + '&sesskey=' + encodeURIComponent(sesskey);
+        fetch(url, {credentials: 'same-origin'})
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var live = (data.live && data.live.label) ? data.live.label : '-';
+                var delayed = (data.delayed && data.delayed.label) ? data.delayed.label : '-';
+                var liveCell = document.querySelector('[data-cr-conexiones-live="' + uid + '"]');
+                var delayedCell = document.querySelector('[data-cr-conexiones-delayed="' + uid + '"]');
+                if (liveCell) {
+                    liveCell.textContent = live;
+                    liveCell.setAttribute('data-sort', (data.live && data.live.seconds) ? data.live.seconds : 0);
+                }
+                if (delayedCell) {
+                    delayedCell.textContent = delayed;
+                    delayedCell.setAttribute('data-sort', (data.delayed && data.delayed.seconds) ? data.delayed.seconds : 0);
+                }
+            })
+            .catch(function() {
+                var liveCell = document.querySelector('[data-cr-conexiones-live="' + uid + '"]');
+                var delayedCell = document.querySelector('[data-cr-conexiones-delayed="' + uid + '"]');
+                if (liveCell) { liveCell.textContent = '–'; }
+                if (delayedCell) { delayedCell.textContent = '–'; }
+            })
+            .then(function() {
+                inflight--;
+                next();
+            });
+        next();
+    }
+    next();
+}
 
 /* ── Toggle fila de detalle ────────────────────────────────────────────────── */
 function crToggle(btn, rowId) {
@@ -2334,6 +2402,22 @@ function crDrawScatter() {
               </small>
             </th>
             <?php endif; ?>
+            <?php if ($hasconexiones): ?>
+            <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('conexioneslive', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('conexioneslive_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
+            <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('conexionesdelayed', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('conexionesdelayed_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
+            <?php endif; ?>
             <th class="cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('lastcoursevisit', 'report_courseradar'); ?>
@@ -2449,6 +2533,15 @@ function crDrawScatter() {
                 data-sort="<?php echo $dedsecs; ?>">
               <?php echo report_courseradar_format_dedication($dedsecs); ?>
             </td>
+            <?php endif; ?>
+            <?php if ($hasconexiones): ?>
+            <td class="text-center text-muted"
+                data-cr-conexiones="<?php echo (int)$uid; ?>"
+                data-cr-conexiones-live="<?php echo (int)$uid; ?>"
+                data-sort="0">…</td>
+            <td class="text-center text-muted"
+                data-cr-conexiones-delayed="<?php echo (int)$uid; ?>"
+                data-sort="0">…</td>
             <?php endif; ?>
 
             <?php $lastcv = $lastcoursevisit[$uid] ?? 0; ?>

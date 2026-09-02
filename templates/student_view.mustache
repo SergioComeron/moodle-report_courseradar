@@ -131,6 +131,26 @@
       </div>
     </div>
     {{/showdaysinactive}}
+    {{#showconexiones}}
+    <div class="col-6 col-lg-3">
+      <div class="card cr-card h-100 text-center">
+        <div class="card-body">
+          <div class="cr-stat">{{conexioneslive}}</div>
+          <div class="cr-stat-label">{{#str}}conexioneslive, report_courseradar{{/str}}</div>
+          <div class="small text-muted">{{#str}}conexioneslive_desc, report_courseradar{{/str}}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card cr-card h-100 text-center">
+        <div class="card-body">
+          <div class="cr-stat">{{conexionesdelayed}}</div>
+          <div class="cr-stat-label">{{#str}}conexionesdelayed, report_courseradar{{/str}}</div>
+          <div class="small text-muted">{{#str}}conexionesdelayed_desc, report_courseradar{{/str}}</div>
+        </div>
+      </div>
+    </div>
+    {{/showconexiones}}
   </div>
   {{/haskpis}}
 

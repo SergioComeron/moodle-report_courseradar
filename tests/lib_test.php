@@ -37,6 +37,7 @@ require_once($CFG->dirroot . '/report/courseradar/locallib.php');
  * @covers     \report_courseradar_dedication_average
  * @covers     \report_courseradar_format_dedication
  * @covers     \report_courseradar_student_display
+ * @covers     \report_courseradar\conexiones_client
  */
 final class lib_test extends \advanced_testcase {
     // Tests for report_courseradar_barclass.
@@ -639,5 +640,41 @@ final class lib_test extends \advanced_testcase {
         $this->assertFalse($display['studentshowcomparison']);
         $this->assertTrue($display['studentshowcoverage']);
         $this->assertTrue($display['studentshowpending']);
+    }
+
+    /**
+     * Connection payload with session list and HH:MM:SS is summarised to seconds.
+     */
+    public function test_conexiones_summarise_session_list(): void {
+        $data = [
+            'Sesiones' => [
+                ['Titulo' => 'S1', 'Fecha' => '2026-01-10', 'TiempoTotal' => '01:00:00'],
+                ['Titulo' => 'S2', 'Fecha' => '2026-01-17', 'DuracionSegundos' => 120],
+            ],
+        ];
+        $out = \report_courseradar\conexiones_client::summarise($data);
+        $this->assertTrue($out['ok']);
+        $this->assertSame(2, $out['count']);
+        $this->assertSame(3720, $out['seconds']);
+        $this->assertSame('S1', $out['rows'][0]['title']);
+    }
+
+    /**
+     * Empty or unknown payload does not throw and reports zero.
+     */
+    public function test_conexiones_summarise_empty(): void {
+        $out = \report_courseradar\conexiones_client::summarise(null);
+        $this->assertTrue($out['ok']);
+        $this->assertSame(0, $out['count']);
+        $this->assertSame(0, $out['seconds']);
+    }
+
+    /**
+     * API is not configured without Zoom or local OAuth settings.
+     */
+    public function test_conexiones_not_configured_by_default(): void {
+        $this->resetAfterTest();
+        set_config('reusezoomapi', 0, 'report_courseradar');
+        $this->assertFalse(\report_courseradar\conexiones_client::is_configured());
     }
 }

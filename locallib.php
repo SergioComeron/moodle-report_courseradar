@@ -373,6 +373,7 @@ function report_courseradar_student_display(): array {
         'studentshowcomparison',
         'studentshowpending',
         'studentshowchart',
+        'studentshowconexiones',
     ];
     $out = [];
     foreach ($keys as $key) {

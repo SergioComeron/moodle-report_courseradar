@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for report_courseradar.
+ * Cache definitions for report_courseradar.
  *
  * @package    report_courseradar
  * @copyright  2025 Sergio Comerón <sergiocomeron@icloud.com>
@@ -24,8 +24,17 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026090102;
-$plugin->requires  = 2024100700;
-$plugin->component = 'report_courseradar';
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '1.0.0';
+$definitions = [
+    'oauth_tokens' => [
+        'mode' => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => false,
+        'ttl' => 3600,
+    ],
+    'conexiones' => [
+        'mode' => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => false,
+        'ttl' => 900,
+    ],
+];
