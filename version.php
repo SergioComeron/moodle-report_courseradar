@@ -28,4 +28,4 @@ $plugin->version   = 2026090201;
 $plugin->requires  = 2024100700;
 $plugin->component = 'report_courseradar';
 $plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '1.8.0';
+$plugin->release   = '1.9.1'; // x-release-please-version
