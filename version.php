@@ -24,8 +24,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026090102;
+$plugin->version   = 2026090200;
 $plugin->requires  = 2024100700;
 $plugin->component = 'report_courseradar';
 $plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '1.0.0';
+$plugin->release   = '1.8.0';
