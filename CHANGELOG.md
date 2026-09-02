@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.4](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.9.3...v1.9.4) (2026-09-02)
+
+
+### Bug Fixes
+
+* incrementar siempre $plugin-&gt;version en el ZIP de release ([11af6c2](https://github.com/SergioComeron/moodle-report_courseradar/commit/11af6c2418a4ffc76f862473949a2c34059f6b55))
+
 ## [1.9.3](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.9.2...v1.9.3) (2026-09-02)
 
 
