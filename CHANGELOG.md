@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.7.1...v1.8.0) (2026-09-02)
+
+
+### Features
+
+* hacer parametrizable la vista de estudiante ([1ada2e6](https://github.com/SergioComeron/moodle-report_courseradar/commit/1ada2e6eeed100fbf0527274ad92dcb806c84f45))
+* informe de conexiones Zoom/Vimeo via API UDIMA ([62f2d66](https://github.com/SergioComeron/moodle-report_courseradar/commit/62f2d661a7aa598948f4a4463f1d36ff1efdcd1b))
+
 ## [1.7.1](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.7.0...v1.7.1) (2026-09-01)
 
 
