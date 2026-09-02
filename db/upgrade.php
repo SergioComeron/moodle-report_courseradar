@@ -70,5 +70,9 @@ function xmldb_report_courseradar_upgrade($oldversion): bool {
         upgrade_plugin_savepoint(true, 2026090201, 'report', 'courseradar');
     }
 
+    if ($oldversion < 2026090203) {
+        upgrade_plugin_savepoint(true, 2026090203, 'report', 'courseradar');
+    }
+
     return true;
 }

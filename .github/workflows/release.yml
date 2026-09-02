@@ -47,10 +47,19 @@ jobs:
         with:
           path: courseradar
 
-      - name: Update Moodle internal version to today
+      - name: Bump Moodle plugin version (never go backwards)
         run: |
-          MOODLE_VER=$(date +%Y%m%d)00
-          sed -i "s/\$plugin->version.*=.*;/\$plugin->version   = $MOODLE_VER;/" courseradar/version.php
+          CURRENT=$(grep -E '\$plugin->version' courseradar/version.php | grep -oE '[0-9]{10}' | head -1)
+          TODAY00=$(date +%Y%m%d)00
+          if [ -z "$CURRENT" ]; then
+            NEW="$TODAY00"
+          elif [ "$CURRENT" -ge "$TODAY00" ]; then
+            NEW=$((CURRENT + 1))
+          else
+            NEW="$TODAY00"
+          fi
+          sed -i "s/\$plugin->version.*=.*;/\$plugin->version   = ${NEW};/" courseradar/version.php
+          echo "Moodle \$plugin->version set to ${NEW} (was ${CURRENT:-none})"
 
       - name: Build installable ZIP
         run: |
