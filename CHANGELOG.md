@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.9.5...v1.10.0) (2026-09-03)
+
+
+### Features
+
+* carga diferida, detalle de sesiones y export CSV ([5e71ae3](https://github.com/SergioComeron/moodle-report_courseradar/commit/5e71ae364627d300c11d0e091e90b65fbfefe5b5))
+
+
+### Bug Fixes
+
+* crear tabla conex en upgrade aunque el version ya sea 2026090204 ([a33f3e5](https://github.com/SergioComeron/moodle-report_courseradar/commit/a33f3e5136c01613f597c4c1857ade181c51a82b))
+* tests de summarise usan el total de Horas/HorasVimeo ([4384eef](https://github.com/SergioComeron/moodle-report_courseradar/commit/4384eefd06828650ce1028c48262d2ed57634e60))
+
 ## [1.9.5](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.9.4...v1.9.5) (2026-09-02)
 
 
