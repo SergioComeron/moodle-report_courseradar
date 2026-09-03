@@ -682,7 +682,7 @@ final class lib_test extends \advanced_testcase {
         $out = \report_courseradar\conexiones_client::summarise($data);
         $this->assertTrue($out['ok']);
         $this->assertSame(2, $out['count']);
-        $this->assertSame(3094 + 847, $out['seconds']);
+        $this->assertSame(5 * 3600 + 43 * 60, $out['seconds']);
         $this->assertSame('30/09/2025', $out['rows'][0]['when']);
     }
 
@@ -706,7 +706,7 @@ final class lib_test extends \advanced_testcase {
         ];
         $out = \report_courseradar\conexiones_client::summarise($data);
         $this->assertSame(1, $out['count']);
-        $this->assertSame(55 * 60 + 7, $out['seconds']);
+        $this->assertSame(2 * 3600 + 40 * 60, $out['seconds']);
         $this->assertSame('15:59', $out['rows'][0]['start']);
         $this->assertSame('55m', $out['rows'][0]['duration']);
     }
