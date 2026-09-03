@@ -9,12 +9,21 @@ on:
     branches:
       - main
       - dev
+    # release-please PRs only touch these; skipping them avoids a race where
+    # auto-merge deletes the head and CI fails with "workflow file issue".
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - '.release-please-manifest.json'
+      - 'version.php'
+
+concurrency:
+  group: moodle-ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   ci:
-    # release-please auto-merges its PR with GITHUB_TOKEN; CI then races the
-    # deleted head and fails in ~2s with "workflow file issue".
-    if: github.head_ref != 'release-please--branches--main'
+    # Belt and suspenders if a release-please PR ever matches paths-ignore.
+    if: github.event_name != 'pull_request' || github.head_ref != 'release-please--branches--main'
     name: PHP ${{ matrix.php }} / Moodle ${{ matrix.moodle-branch }} / ${{ matrix.database }}
     runs-on: ubuntu-22.04
 
