@@ -24,6 +24,20 @@
 
 
 /**
+ * Compact loading spinner, optionally with a "Loading" label.
+ *
+ * @param bool $withtext Include the loadingdata string.
+ * @return string HTML
+ */
+function report_courseradar_loading(bool $withtext = false): string {
+    $spin = '<span class="spinner-border spinner-border-sm text-muted" role="status" aria-hidden="true"></span>';
+    if (!$withtext) {
+        return $spin;
+    }
+    return $spin . ' <span class="text-muted">' . get_string('loadingdata', 'report_courseradar') . '</span>';
+}
+
+/**
  * Returns the Bootstrap progress bar colour class based on a percentage.
  *
  * @param int $pct Percentage (0-100).
@@ -53,7 +67,7 @@ function report_courseradar_get_students(\context_course $context): array {
         $context,
         '',
         0,
-        'u.id, u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic,' .
+        'u.id, u.username, u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic,' .
         ' u.middlename, u.alternatename, u.picture, u.imagealt, u.email'
     );
     $canviewids = array_keys(
@@ -381,4 +395,203 @@ function report_courseradar_student_display(): array {
         $out[$key] = ($val === false) ? true : (bool)(int)$val;
     }
     return $out;
+}
+
+/**
+ * Deferred activity charts: daily totals, heatmap, heatmap students, weekly bars.
+ *
+ * @param int   $courseid
+ * @param array $studentids
+ * @param array $students   [userid => stdClass]
+ * @param int   $datefrom
+ * @param int   $dateto
+ * @return array{byday: array, heatmap: array, heatstudents: array, weekdata: array}
+ */
+function report_courseradar_activity_charts(
+    int $courseid,
+    array $studentids,
+    array $students,
+    int $datefrom,
+    int $dateto
+): array {
+    global $DB;
+
+    $heatmap      = array_fill(0, 7, array_fill(0, 6, 0));
+    $heatstudents = array_fill(0, 7, array_fill(0, 6, []));
+    $byday        = [];
+    $weekdata     = [];
+
+    if (empty($studentids)) {
+        return compact('byday', 'heatmap', 'heatstudents', 'weekdata');
+    }
+
+    [$insql, $inparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'st');
+    $logparams = array_merge([
+        'courseid'     => $courseid,
+        'action'       => 'viewed',
+        'contextlevel' => CONTEXT_MODULE,
+        'datefrom'     => $datefrom,
+        'dateto'       => $dateto,
+    ], $inparams);
+
+    $sql3 = "SELECT (timecreated / 86400) * 86400 AS dayts, COUNT(*) AS cnt
+               FROM {logstore_standard_log}
+              WHERE courseid     = :courseid
+                AND action       = :action
+                AND contextlevel = :contextlevel
+                AND timecreated >= :datefrom
+                AND timecreated <= :dateto
+                AND userid {$insql}
+              GROUP BY timecreated / 86400
+              ORDER BY dayts";
+    $rs = $DB->get_recordset_sql($sql3, $logparams);
+    foreach ($rs as $row) {
+        $byday[date('Y-m-d', (int)$row->dayts)] = (int)$row->cnt;
+    }
+    $rs->close();
+
+    $sql4 = "SELECT MOD(timecreated / 86400 + 4, 7) AS dow,
+                    timecreated % 86400 / 14400      AS timeblock,
+                    COUNT(*)                         AS cnt
+               FROM {logstore_standard_log}
+              WHERE courseid     = :courseid
+                AND action       = :action
+                AND contextlevel = :contextlevel
+                AND timecreated >= :datefrom
+                AND timecreated <= :dateto
+                AND userid {$insql}
+              GROUP BY MOD(timecreated / 86400 + 4, 7),
+                       timecreated % 86400 / 14400";
+    $rs = $DB->get_recordset_sql($sql4, $logparams);
+    foreach ($rs as $row) {
+        $heatmap[(int)$row->dow][(int)$row->timeblock] = (int)$row->cnt;
+    }
+    $rs->close();
+
+    $sql4b = "SELECT DISTINCT MOD(timecreated / 86400 + 4, 7) AS dow,
+                              timecreated % 86400 / 14400      AS timeblock,
+                              userid
+                FROM {logstore_standard_log}
+               WHERE courseid     = :courseid
+                 AND action       = :action
+                 AND contextlevel = :contextlevel
+                 AND timecreated >= :datefrom
+                 AND timecreated <= :dateto
+                 AND userid {$insql}";
+    $rs = $DB->get_recordset_sql($sql4b, $logparams);
+    foreach ($rs as $row) {
+        $uid = (int)$row->userid;
+        if (isset($students[$uid])) {
+            $heatstudents[(int)$row->dow][(int)$row->timeblock][] = [
+                'id'   => $uid,
+                'name' => fullname($students[$uid]),
+            ];
+        }
+    }
+    $rs->close();
+    foreach ($heatstudents as $d => $blocks) {
+        foreach ($blocks as $b => $entries) {
+            usort($heatstudents[$d][$b], fn($a, $b) => strcmp($a['name'], $b['name']));
+        }
+    }
+
+    $sql5 = "SELECT userid,
+                    (timecreated / 604800) * 604800 AS weekts,
+                    COUNT(*)                        AS cnt
+               FROM {logstore_standard_log}
+              WHERE courseid     = :courseid
+                AND action       = :action
+                AND contextlevel = :contextlevel
+                AND timecreated >= :datefrom
+                AND timecreated <= :dateto
+                AND userid {$insql}
+              GROUP BY userid, timecreated / 604800
+              ORDER BY userid, weekts";
+    $rs = $DB->get_recordset_sql($sql5, $logparams);
+    foreach ($rs as $row) {
+        $weekdata[$row->userid][(int)$row->weekts] = (int)$row->cnt;
+    }
+    $rs->close();
+
+    return compact('byday', 'heatmap', 'heatstudents', 'weekdata');
+}
+
+/**
+ * Sparkline bar specs per student.
+ *
+ * @param array $weekdata [userid][weekts] => count
+ * @param int   $datefrom
+ * @param int   $dateto
+ * @param array $studentids
+ * @return array [userid => list of {cnt, height, label}]
+ */
+function report_courseradar_sparkline_bars(
+    array $weekdata,
+    int $datefrom,
+    int $dateto,
+    array $studentids
+): array {
+    $weekslots = [];
+    for ($w = (int)($datefrom / 604800) * 604800; $w <= $dateto; $w += 604800) {
+        $weekslots[] = $w;
+    }
+    $sparklines = [];
+    foreach ($studentids as $uid) {
+        if (empty($weekdata[$uid])) {
+            $sparklines[$uid] = [];
+            continue;
+        }
+        $maxcnt = max($weekdata[$uid]);
+        $bars = [];
+        foreach ($weekslots as $w) {
+            $cnt = $weekdata[$uid][$w] ?? 0;
+            $bars[] = [
+                'cnt'    => $cnt,
+                'height' => $maxcnt > 0 ? max(3, (int)round(($cnt / $maxcnt) * 100)) : 3,
+                'label'  => userdate($w, get_string('chartdateformat', 'report_courseradar')),
+            ];
+        }
+        $sparklines[$uid] = $bars;
+    }
+    return $sparklines;
+}
+
+/**
+ * Line-chart labels/values from daily counts.
+ *
+ * @param array $byday [Y-m-d => count]
+ * @param int   $datefrom
+ * @param int   $dateto
+ * @return array{labels: array, values: array, weekly: bool}
+ */
+function report_courseradar_chart_series(array $byday, int $datefrom, int $dateto): array {
+    $labels = [];
+    $values = [];
+    $weekly = false;
+    if (empty($byday)) {
+        return ['labels' => $labels, 'values' => $values, 'weekly' => $weekly];
+    }
+    $dayrange = ($dateto - $datefrom) / DAYSECS;
+    if ($dayrange > 90) {
+        $weekly = true;
+        $byweek = [];
+        foreach ($byday as $day => $cnt) {
+            $ts     = strtotime($day);
+            $isodow = (int)date('N', $ts);
+            $monds  = $ts - ($isodow - 1) * 86400;
+            $wk     = date('Y-m-d', $monds);
+            $byweek[$wk] = ($byweek[$wk] ?? 0) + $cnt;
+        }
+        ksort($byweek);
+        foreach ($byweek as $wk => $cnt) {
+            $labels[] = userdate(strtotime($wk), get_string('chartdateformat', 'report_courseradar'));
+            $values[] = $cnt;
+        }
+    } else {
+        for ($d = $datefrom; $d <= $dateto; $d += DAYSECS) {
+            $labels[] = userdate($d, get_string('chartdateformat', 'report_courseradar'));
+            $values[] = $byday[date('Y-m-d', $d)] ?? 0;
+        }
+    }
+    return ['labels' => $labels, 'values' => $values, 'weekly' => $weekly];
 }

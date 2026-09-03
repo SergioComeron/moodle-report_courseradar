@@ -135,7 +135,7 @@
     <div class="col-6 col-lg-3">
       <div class="card cr-card h-100 text-center">
         <div class="card-body">
-          <div class="cr-stat">{{conexioneslive}}</div>
+          <div class="cr-stat" id="cr-stu-live">{{#conexstale}}<span class="spinner-border spinner-border-sm text-muted" role="status"></span>{{/conexstale}}{{^conexstale}}{{conexioneslive}}{{/conexstale}}</div>
           <div class="cr-stat-label">{{#str}}conexioneslive, report_courseradar{{/str}}</div>
           <div class="small text-muted">{{#str}}conexioneslive_desc, report_courseradar{{/str}}</div>
         </div>
@@ -144,7 +144,7 @@
     <div class="col-6 col-lg-3">
       <div class="card cr-card h-100 text-center">
         <div class="card-body">
-          <div class="cr-stat">{{conexionesdelayed}}</div>
+          <div class="cr-stat" id="cr-stu-delayed">{{#conexstale}}<span class="spinner-border spinner-border-sm text-muted" role="status"></span>{{/conexstale}}{{^conexstale}}{{conexionesdelayed}}{{/conexstale}}</div>
           <div class="cr-stat-label">{{#str}}conexionesdelayed, report_courseradar{{/str}}</div>
           <div class="small text-muted">{{#str}}conexionesdelayed_desc, report_courseradar{{/str}}</div>
         </div>
@@ -172,21 +172,20 @@
         <div class="d-flex justify-content-between mb-1">
           <span class="fw-semibold">{{#str}}riskscore, report_courseradar{{/str}}</span>
           <span>
-            <span class="badge {{#scoreabove}}bg-success{{/scoreabove}}{{^scoreabove}}bg-secondary{{/scoreabove}} text-white">
-              {{#scoreabove}}{{#str}}aboveaverage, report_courseradar{{/str}}{{/scoreabove}}
-              {{^scoreabove}}{{#str}}belowaverage, report_courseradar{{/str}}{{/scoreabove}}
-            </span>
+            <span id="cr-badge-score" class="badge bg-secondary text-white d-none" data-you="{{score}}"></span>
           </span>
         </div>
-        <div class="progress cr-cmp-progress">
-          <div class="progress-bar {{scoreclass}}" role="progressbar" style="width: {{score}}%;">
-            {{#str}}you, report_courseradar{{/str}}: {{score}}
+        <div class="d-flex align-items-center gap-2">
+          <div class="progress cr-cmp-progress flex-grow-1">
+            <div class="progress-bar {{scoreclass}}" role="progressbar" style="width: {{score}}%;"></div>
           </div>
+          <span class="cr-cmp-caption">{{#str}}you, report_courseradar{{/str}}: {{score}}</span>
         </div>
-        <div class="progress cr-cmp-progress mt-1">
-          <div class="progress-bar bg-secondary" role="progressbar" style="width: {{classscore}}%;">
-            {{#str}}classaverage, report_courseradar{{/str}}: {{classscore}}
+        <div class="d-flex align-items-center gap-2 mt-1">
+          <div class="progress cr-cmp-progress flex-grow-1">
+            <div id="cr-cls-score-bar" class="progress-bar bg-secondary" role="progressbar" style="width: 0%;"></div>
           </div>
+          <span class="cr-cmp-caption">{{#str}}classaverage, report_courseradar{{/str}}: <span id="cr-cls-score"><span class="spinner-border spinner-border-sm text-muted" role="status"></span></span></span>
         </div>
       </div>
       {{/showcmpscore}}
@@ -196,21 +195,20 @@
         <div class="d-flex justify-content-between mb-1">
           <span class="fw-semibold">{{#str}}resourcesvisited, report_courseradar{{/str}}</span>
           <span>
-            <span class="badge {{#coverageabove}}bg-success{{/coverageabove}}{{^coverageabove}}bg-secondary{{/coverageabove}} text-white">
-              {{#coverageabove}}{{#str}}aboveaverage, report_courseradar{{/str}}{{/coverageabove}}
-              {{^coverageabove}}{{#str}}belowaverage, report_courseradar{{/str}}{{/coverageabove}}
-            </span>
+            <span id="cr-badge-coverage" class="badge bg-secondary text-white d-none" data-you="{{coverage}}"></span>
           </span>
         </div>
-        <div class="progress cr-cmp-progress">
-          <div class="progress-bar {{coverageclass}}" role="progressbar" style="width: {{coverage}}%;">
-            {{#str}}you, report_courseradar{{/str}}: {{coverage}}%
+        <div class="d-flex align-items-center gap-2">
+          <div class="progress cr-cmp-progress flex-grow-1">
+            <div class="progress-bar {{coverageclass}}" role="progressbar" style="width: {{coverage}}%;"></div>
           </div>
+          <span class="cr-cmp-caption">{{#str}}you, report_courseradar{{/str}}: {{coverage}}%</span>
         </div>
-        <div class="progress cr-cmp-progress mt-1">
-          <div class="progress-bar bg-secondary" role="progressbar" style="width: {{classcoverage}}%;">
-            {{#str}}classaverage, report_courseradar{{/str}}: {{classcoverage}}%
+        <div class="d-flex align-items-center gap-2 mt-1">
+          <div class="progress cr-cmp-progress flex-grow-1">
+            <div id="cr-cls-coverage-bar" class="progress-bar bg-secondary" role="progressbar" style="width: 0%;"></div>
           </div>
+          <span class="cr-cmp-caption">{{#str}}classaverage, report_courseradar{{/str}}: <span id="cr-cls-coverage"><span class="spinner-border spinner-border-sm text-muted" role="status"></span></span>%</span>
         </div>
       </div>
       {{/showcmpcoverage}}
@@ -220,21 +218,20 @@
         <div class="d-flex justify-content-between mb-1">
           <span class="fw-semibold">{{#str}}completionstu, report_courseradar{{/str}}</span>
           <span>
-            <span class="badge {{#completionabove}}bg-success{{/completionabove}}{{^completionabove}}bg-secondary{{/completionabove}} text-white">
-              {{#completionabove}}{{#str}}aboveaverage, report_courseradar{{/str}}{{/completionabove}}
-              {{^completionabove}}{{#str}}belowaverage, report_courseradar{{/str}}{{/completionabove}}
-            </span>
+            <span id="cr-badge-completion" class="badge bg-secondary text-white d-none" data-you="{{completion}}"></span>
           </span>
         </div>
-        <div class="progress cr-cmp-progress">
-          <div class="progress-bar bg-info" role="progressbar" style="width: {{completion}}%;">
-            {{#str}}you, report_courseradar{{/str}}: {{completion}}%
+        <div class="d-flex align-items-center gap-2">
+          <div class="progress cr-cmp-progress flex-grow-1">
+            <div class="progress-bar bg-info" role="progressbar" style="width: {{completion}}%;"></div>
           </div>
+          <span class="cr-cmp-caption">{{#str}}you, report_courseradar{{/str}}: {{completion}}%</span>
         </div>
-        <div class="progress cr-cmp-progress mt-1">
-          <div class="progress-bar bg-secondary" role="progressbar" style="width: {{classcompletion}}%;">
-            {{#str}}classaverage, report_courseradar{{/str}}: {{classcompletion}}%
+        <div class="d-flex align-items-center gap-2 mt-1">
+          <div class="progress cr-cmp-progress flex-grow-1">
+            <div id="cr-cls-completion-bar" class="progress-bar bg-secondary" role="progressbar" style="width: 0%;"></div>
           </div>
+          <span class="cr-cmp-caption">{{#str}}classaverage, report_courseradar{{/str}}: <span id="cr-cls-completion"><span class="spinner-border spinner-border-sm text-muted" role="status"></span></span>%</span>
         </div>
       </div>
       {{/showcmpcompletion}}
@@ -244,21 +241,20 @@
         <div class="d-flex justify-content-between mb-1">
           <span class="fw-semibold">{{#str}}dedication, report_courseradar{{/str}}</span>
           <span>
-            <span class="badge {{#dedicationabove}}bg-success{{/dedicationabove}}{{^dedicationabove}}bg-secondary{{/dedicationabove}} text-white">
-              {{#dedicationabove}}{{#str}}aboveaverage, report_courseradar{{/str}}{{/dedicationabove}}
-              {{^dedicationabove}}{{#str}}belowaverage, report_courseradar{{/str}}{{/dedicationabove}}
-            </span>
+            <span id="cr-badge-dedication" class="badge bg-secondary text-white d-none"></span>
           </span>
         </div>
-        <div class="progress cr-cmp-progress">
-          <div class="progress-bar bg-dark" role="progressbar" style="width: {{dedicationpct}}%;">
-            {{#str}}you, report_courseradar{{/str}}: {{dedication}}
+        <div class="d-flex align-items-center gap-2">
+          <div class="progress cr-cmp-progress flex-grow-1">
+            <div class="progress-bar bg-dark" role="progressbar" style="width: {{dedicationpct}}%;"></div>
           </div>
+          <span class="cr-cmp-caption">{{#str}}you, report_courseradar{{/str}}: {{dedication}}</span>
         </div>
-        <div class="progress cr-cmp-progress mt-1">
-          <div class="progress-bar bg-secondary" role="progressbar" style="width: {{classdedicationpct}}%;">
-            {{#str}}classaverage, report_courseradar{{/str}}: {{classdedication}}
+        <div class="d-flex align-items-center gap-2 mt-1">
+          <div class="progress cr-cmp-progress flex-grow-1">
+            <div id="cr-cls-dedication-bar" class="progress-bar bg-secondary" role="progressbar" style="width: 0%;"></div>
           </div>
+          <span class="cr-cmp-caption">{{#str}}classaverage, report_courseradar{{/str}}: <span id="cr-cls-dedication"><span class="spinner-border spinner-border-sm text-muted" role="status"></span></span></span>
         </div>
       </div>
       {{/showcmpdedication}}
@@ -309,8 +305,12 @@
           <small class="text-muted">{{#str}}myactivity_desc, report_courseradar{{/str}}</small>
         </div>
         <div class="card-body">
-          {{#haschart}}{{{charthtml}}}{{/haschart}}
-          {{^haschart}}<p class="text-muted mb-0">{{#str}}noactivitydata, report_courseradar{{/str}}</p>{{/haschart}}
+          <div id="cr-stu-chart-loading" class="text-muted small">
+            <span class="spinner-border spinner-border-sm text-muted" role="status"></span>
+            {{#str}}loadingdata, report_courseradar{{/str}}
+          </div>
+          <canvas id="cr-stu-chart" class="d-none" height="120"></canvas>
+          <p id="cr-stu-chart-empty" class="text-muted mb-0 d-none">{{#str}}noactivitydata, report_courseradar{{/str}}</p>
         </div>
       </div>
     </div>
@@ -319,12 +319,110 @@
 
 </div>
 
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var extras = '{{wwwroot}}/report/courseradar/student_extras.php'
+        + '?id={{courseid}}&sesskey={{sesskey}}';
+    fetch(extras, {credentials: 'same-origin'})
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var setBar = function(barId, txtId, pct, label) {
+                var bar = document.getElementById(barId);
+                var txt = document.getElementById(txtId);
+                if (bar) { bar.style.width = (pct || 0) + '%'; }
+                if (txt) { txt.textContent = label; }
+            };
+            setBar('cr-cls-score-bar', 'cr-cls-score', data.classscore, data.classscore);
+            setBar('cr-cls-coverage-bar', 'cr-cls-coverage', data.classcoverage, data.classcoverage);
+            setBar('cr-cls-completion-bar', 'cr-cls-completion', data.classcompletion, data.classcompletion);
+            setBar('cr-cls-dedication-bar', 'cr-cls-dedication', data.classdedicationpct, data.classdedication);
+            var aboveStr = '{{#str}}aboveaverage, report_courseradar{{/str}}';
+            var belowStr = '{{#str}}belowaverage, report_courseradar{{/str}}';
+            var setBadge = function(id, you, avg) {
+                var el = document.getElementById(id);
+                if (!el) {
+                    return;
+                }
+                var above = Number(you) >= Number(avg);
+                el.textContent = above ? aboveStr : belowStr;
+                el.classList.remove('d-none', 'bg-success', 'bg-secondary');
+                el.classList.add(above ? 'bg-success' : 'bg-secondary');
+            };
+            var scoreBadge = document.getElementById('cr-badge-score');
+            var covBadge = document.getElementById('cr-badge-coverage');
+            var compBadge = document.getElementById('cr-badge-completion');
+            setBadge('cr-badge-score', scoreBadge ? scoreBadge.getAttribute('data-you') : 0, data.classscore);
+            setBadge('cr-badge-coverage', covBadge ? covBadge.getAttribute('data-you') : 0, data.classcoverage);
+            setBadge('cr-badge-completion', compBadge ? compBadge.getAttribute('data-you') : 0, data.classcompletion);
+            if (typeof data.dedicationpct === 'number') {
+                setBadge('cr-badge-dedication', data.dedicationpct, data.classdedicationpct);
+            }
+            var youded = document.querySelector('#cr-cls-dedication-bar')
+                && document.querySelector('.progress-bar.bg-dark');
+            if (youded && typeof data.dedicationpct === 'number') {
+                youded.style.width = data.dedicationpct + '%';
+            }
+            var loading = document.getElementById('cr-stu-chart-loading');
+            var canvas = document.getElementById('cr-stu-chart');
+            var empty = document.getElementById('cr-stu-chart-empty');
+            if (data.chartdata && data.chartdata.values && data.chartdata.values.length && canvas) {
+                if (loading) { loading.classList.add('d-none'); }
+                canvas.classList.remove('d-none');
+                if (typeof require === 'function') {
+                    require(['core/chartjs'], function(Chartjs) {
+                        new Chartjs(canvas, {
+                            type: 'line',
+                            data: {
+                                labels: data.chartdata.labels,
+                                datasets: [{
+                                    data: data.chartdata.values,
+                                    borderColor: '#0d6efd',
+                                    fill: false,
+                                    tension: 0.35,
+                                    pointRadius: 2
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                plugins: { legend: { display: false } },
+                                scales: { y: { beginAtZero: true } }
+                            }
+                        });
+                    });
+                }
+            } else if (empty) {
+                if (loading) { loading.classList.add('d-none'); }
+                empty.classList.remove('d-none');
+            }
+        })
+        .catch(function() { /* KPIs already shown. */ });
+
+    {{#conexstale}}
+    var url = '{{wwwroot}}/report/courseradar/conexiones.php'
+        + '?id={{courseid}}&userid={{myid}}&refresh=1&sesskey={{sesskey}}';
+    fetch(url, {credentials: 'same-origin'})
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var live = document.getElementById('cr-stu-live');
+            var delayed = document.getElementById('cr-stu-delayed');
+            if (live && data.live && data.live.label) {
+                live.textContent = data.live.label;
+            }
+            if (delayed && data.delayed && data.delayed.label) {
+                delayed.textContent = data.delayed.label;
+            }
+        })
+        .catch(function() { /* Keep cached placeholders. */ });
+    {{/conexstale}}
+});
+</script>
+
 <style>
 .cr-student .cr-stat        { font-size: 2rem; font-weight: 700; line-height: 1.1; }
 .cr-student .cr-stat-label  { font-size: .9rem; font-weight: 600; margin-top: .25rem; }
 .cr-student .cr-card        { border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
-.cr-student .cr-cmp-progress { height: 22px; border-radius: 6px; }
-.cr-student .cr-cmp-progress .progress-bar { font-size: .8rem; font-weight: 600; }
+.cr-student .cr-cmp-progress { height: 10px; border-radius: 6px; overflow: hidden; }
+.cr-student .cr-cmp-caption { font-size: .8rem; font-weight: 600; white-space: nowrap; min-width: 11rem; }
 .cr-student .cr-mod-icon    { width: 20px; height: 20px; }
 /* Keep the activity chart inside its card on narrow columns. */
 .cr-student .chart-area     { max-width: 100%; }

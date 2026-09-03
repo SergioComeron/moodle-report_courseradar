@@ -56,8 +56,8 @@ header('Content-Type: application/json; charset=utf-8');
 $store = \report_courseradar\conexiones_store::class;
 $row   = $store::get($courseid, $userid);
 if (!$refresh && $store::is_fresh($row)) {
-    echo json_encode($store::export($row));
+    echo json_encode($store::export($row), JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-echo json_encode($store::refresh_user($course, $user));
+echo json_encode($store::refresh_user($course, $user), JSON_UNESCAPED_UNICODE);

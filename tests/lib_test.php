@@ -687,6 +687,31 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
+     * Live Asistencias: Inicio 15:59 is a clock, TiempoTotal is the duration.
+     */
+    public function test_conexiones_summarise_does_not_treat_clock_as_duration(): void {
+        $data = [
+            'datosInforme' => [
+                'General' => ['Horas' => "2h 40'"],
+                'Asistencias' => [
+                    [
+                        'Dia' => '10/03/2026',
+                        'Inicio' => '15:59',
+                        'Fin' => '16:54',
+                        'TiempoTotal' => '55 minutos y 7 segundos',
+                    ],
+                ],
+                'Conexiones' => [],
+            ],
+        ];
+        $out = \report_courseradar\conexiones_client::summarise($data);
+        $this->assertSame(1, $out['count']);
+        $this->assertSame(55 * 60 + 7, $out['seconds']);
+        $this->assertSame('15:59', $out['rows'][0]['start']);
+        $this->assertSame('55m', $out['rows'][0]['duration']);
+    }
+
+    /**
      * Empty or unknown payload does not throw and reports zero.
      */
     public function test_conexiones_summarise_empty(): void {

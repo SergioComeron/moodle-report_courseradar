@@ -79,10 +79,16 @@ foreach ($modinfo->get_cms() as $cm) {
 }
 $totalmodules = count($validcms);
 
-// Enrolled users: separate students from teachers/managers.
-$students      = report_courseradar_get_students($context);
-$totalstudents = count($students);
-$studentids    = array_keys($students);
+// Enrolled users: skip the full roster on student self-view (it is loaded later
+// if the comparison card needs class averages).
+$students      = [];
+$totalstudents = 0;
+$studentids    = [];
+if (!$isstudentview) {
+    $students      = report_courseradar_get_students($context);
+    $totalstudents = count($students);
+    $studentids    = array_keys($students);
+}
 
 // Student self-view.
 // Enrolled students (without the view capability) see their own personal
@@ -92,65 +98,38 @@ if ($isstudentview) {
     $myid    = (int)$USER->id;
     $display = report_courseradar_student_display();
 
-    // Per-student per-module views and last access (whole course, no date range).
-    $studentlog   = []; // Keyed [uid][cmid] => view count.
+    // My per-module views (whole course). Class-wide logs are only loaded if comparison is on.
+    $studentlog   = []; // Keyed [uid][cmid] => view count (own row is real cmids).
     $lastaccessby = []; // Keyed [uid] => last module-view timestamp.
     $myday        = []; // Keyed [Y-m-d] => count of my own daily interactions.
 
-    if ($totalstudents > 0 && $totalmodules > 0) {
-        [$insql, $inparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'st');
-        $baseparams = array_merge([
-            'courseid'     => $courseid,
-            'action'       => 'viewed',
-            'contextlevel' => CONTEXT_MODULE,
-        ], $inparams);
-
-        $sql = "SELECT contextinstanceid AS cmid, userid,
-                       COUNT(*) AS views, MAX(timecreated) AS lastaccess
+    if ($totalmodules > 0) {
+        $sql = "SELECT contextinstanceid AS cmid, COUNT(*) AS views, MAX(timecreated) AS lastaccess
                   FROM {logstore_standard_log}
                  WHERE courseid     = :courseid
                    AND action       = :action
                    AND contextlevel = :contextlevel
-                   AND userid {$insql}
-                 GROUP BY contextinstanceid, userid";
-        $rs = $DB->get_recordset_sql($sql, $baseparams);
+                   AND userid       = :myid
+                 GROUP BY contextinstanceid";
+        $rs = $DB->get_recordset_sql($sql, [
+            'courseid'     => $courseid,
+            'action'       => 'viewed',
+            'contextlevel' => CONTEXT_MODULE,
+            'myid'         => $myid,
+        ]);
         foreach ($rs as $row) {
-            $studentlog[$row->userid][$row->cmid] = (int)$row->views;
+            $studentlog[$myid][$row->cmid] = (int)$row->views;
             $la = (int)$row->lastaccess;
-            if (!isset($lastaccessby[$row->userid]) || $la > $lastaccessby[$row->userid]) {
-                $lastaccessby[$row->userid] = $la;
+            if (!isset($lastaccessby[$myid]) || $la > $lastaccessby[$myid]) {
+                $lastaccessby[$myid] = $la;
             }
         }
         $rs->close();
-
-        // My own daily activity across the whole course.
-        if ($display['studentshowchart']) {
-            $sqlday = "SELECT (timecreated / 86400) * 86400 AS dayts, COUNT(*) AS cnt
-                         FROM {logstore_standard_log}
-                        WHERE courseid     = :courseid
-                          AND action       = :action
-                          AND contextlevel = :contextlevel
-                          AND userid       = :myid
-                        GROUP BY timecreated / 86400
-                        ORDER BY dayts";
-            $rs = $DB->get_recordset_sql($sqlday, [
-                'courseid'     => $courseid,
-                'action'       => 'viewed',
-                'contextlevel' => CONTEXT_MODULE,
-                'myid'         => $myid,
-            ]);
-            foreach ($rs as $row) {
-                $myday[date('Y-m-d', (int)$row->dayts)] = (int)$row->cnt;
-            }
-            $rs->close();
-        }
     }
 
-    // Days since last access, per student.
+    // Days since last access (own row). Class averages load via student_extras.php.
     $daysinactive = [];
-    foreach ($students as $uid => $stu) {
-        $daysinactive[$uid] = report_courseradar_days_inactive($lastaccessby[$uid] ?? 0);
-    }
+    $daysinactive[$myid] = report_courseradar_days_inactive($lastaccessby[$myid] ?? 0);
 
     // Completion (whole course).
     $completionenabled = !empty($course->enablecompletion);
@@ -166,9 +145,10 @@ if ($isstudentview) {
     }
     $completedbystu  = []; // Keyed [uid] => completed tracked activities.
     $mycompletedcms  = []; // Keyed [cmid] => true for tracked activities I completed.
-    if ($hasanycompletion && $totalstudents > 0) {
-        [$cminsql, $cminp]   = $DB->get_in_or_equal(array_keys($validcms), SQL_PARAMS_NAMED, 'cm');
-        [$stcinsql, $stcinp] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'stc');
+    if ($hasanycompletion) {
+        [$cminsql, $cminp] = $DB->get_in_or_equal(array_keys($validcms), SQL_PARAMS_NAMED, 'cm');
+        $compusers = [$myid];
+        [$stcinsql, $stcinp] = $DB->get_in_or_equal($compusers, SQL_PARAMS_NAMED, 'stc');
         $rs = $DB->get_recordset_sql(
             "SELECT coursemoduleid AS cmid, userid, completionstate
                FROM {course_modules_completion}
@@ -192,7 +172,8 @@ if ($isstudentview) {
     $mydedication  = 0;
     $clsdedication = 0;
     if ($display['studentshowdedication']) {
-        $dedication    = report_courseradar_dedication($courseid, $studentids);
+        $dedids        = [$myid];
+        $dedication    = report_courseradar_dedication($courseid, $dedids);
         $hasdedication = !empty($dedication);
         $mydedication  = $dedication[$myid] ?? 0;
         $clsdedication = $display['studentshowcomparison']
@@ -203,8 +184,9 @@ if ($isstudentview) {
     // Engagement scores (own KPI and/or class comparison).
     $riskscores = [];
     if ($display['studentshowscore']) {
+        $scorestudents = [$myid => $USER];
         $riskscores = report_courseradar_engagement_scores(
-            $students,
+            $scorestudents,
             $studentlog,
             $daysinactive,
             $totalmodules,
@@ -227,21 +209,6 @@ if ($isstudentview) {
     $clsscore      = 0;
     $clscoverage   = 0;
     $clscompletion = 0;
-    if ($display['studentshowcomparison']) {
-        $clsscore = $riskscores ? (int)round(array_sum($riskscores) / count($riskscores)) : 0;
-        $covsum   = 0.0;
-        $compsum  = 0.0;
-        foreach ($students as $uid => $stu) {
-            if ($totalmodules > 0) {
-                $covsum += (count($studentlog[$uid] ?? []) / $totalmodules) * 100;
-            }
-            if ($hasanycompletion && $totaltracked > 0) {
-                $compsum += (($completedbystu[$uid] ?? 0) / $totaltracked) * 100;
-            }
-        }
-        $clscoverage   = $totalstudents > 0 ? (int)round($covsum / $totalstudents) : 0;
-        $clscompletion = $totalstudents > 0 ? (int)round($compsum / $totalstudents) : 0;
-    }
 
     $showscore      = $display['studentshowscore'];
     $showcoverage   = $display['studentshowcoverage'];
@@ -265,18 +232,14 @@ if ($isstudentview) {
     $conexionesupdated = '';
     if ($showconexiones) {
         $stored = \report_courseradar\conexiones_store::get($courseid, $myid);
-        if (\report_courseradar\conexiones_store::is_fresh($stored)) {
-            $export = \report_courseradar\conexiones_store::export($stored);
-        } else {
-            $export = \report_courseradar\conexiones_store::refresh_user($course, $USER);
-        }
+        $export = \report_courseradar\conexiones_store::export($stored);
         $conexioneslive    = $export['live'];
         $conexionesdelayed = $export['delayed'];
-        if (!empty($export['timefetched'])) {
+        if (\report_courseradar\conexiones_store::is_fresh($stored) && !empty($export['timefetched'])) {
             $conexionesupdated = get_string(
                 'conexionesupdated',
                 'report_courseradar',
-                userdate((int)$export['timefetched'], get_string('strftimetime', 'langconfig'))
+                userdate((int)$export['timefetched'], get_string('strftimedatetimeshort', 'langconfig'))
             );
         }
     }
@@ -393,6 +356,13 @@ if ($isstudentview) {
         'allvisited'    => $showpending && empty($pending) && $totalmodules > 0,
         'charthtml'     => $stuchart ? $OUTPUT->render($stuchart) : '',
         'haschart'      => (bool)$stuchart,
+        'conexstale'    => $showconexiones && !\report_courseradar\conexiones_store::is_fresh(
+            \report_courseradar\conexiones_store::get($courseid, $myid)
+        ),
+        'myid'          => $myid,
+        'courseid'      => $courseid,
+        'sesskey'       => sesskey(),
+        'wwwroot'       => $CFG->wwwroot,
     ];
 
     echo $OUTPUT->header();
@@ -452,94 +422,9 @@ if ($totalstudents > 0 && $totalmodules > 0) {
         $studentlog[$row->userid][$row->cmid] = (int)$row->views;
     }
     $rs->close();
-
-    // Activity per day (aggregated in SQL — avoids fetching raw timestamps).
-    // FLOOR(timecreated / 86400) * 86400 gives the UTC midnight timestamp for each day.
-    $sql3 = "SELECT (timecreated / 86400) * 86400 AS dayts, COUNT(*) AS cnt
-               FROM {logstore_standard_log}
-              WHERE courseid     = :courseid
-                AND action       = :action
-                AND contextlevel = :contextlevel
-                AND timecreated >= :datefrom
-                AND timecreated <= :dateto
-                AND userid {$insql}
-              GROUP BY timecreated / 86400
-              ORDER BY dayts";
-    $rs = $DB->get_recordset_sql($sql3, $logparams);
-    foreach ($rs as $row) {
-        $byday[date('Y-m-d', (int)$row->dayts)] = (int)$row->cnt;
-    }
-    $rs->close();
-
-    // Heatmap: interactions per (day-of-week, 4-hour block), aggregated in SQL.
-    // Unix epoch (ts=0) was a Thursday; (days_since_epoch + 4) % 7 gives PHP date('w').
-    // ts % 86400 / 14400 gives the 4-hour block (0-5).
-    $sql4 = "SELECT MOD(timecreated / 86400 + 4, 7)     AS dow,
-                    timecreated % 86400 / 14400          AS timeblock,
-                    COUNT(*)                             AS cnt
-               FROM {logstore_standard_log}
-              WHERE courseid     = :courseid
-                AND action       = :action
-                AND contextlevel = :contextlevel
-                AND timecreated >= :datefrom
-                AND timecreated <= :dateto
-                AND userid {$insql}
-              GROUP BY MOD(timecreated / 86400 + 4, 7),
-                       timecreated % 86400 / 14400";
-    $rs = $DB->get_recordset_sql($sql4, $logparams);
-    foreach ($rs as $row) {
-        $heatmap[(int)$row->dow][(int)$row->timeblock] = (int)$row->cnt;
-    }
-    $rs->close();
-
-    // Heatmap per-student: distinct (dow, timeblock, userid) to populate the click panel.
-    $sql4b = "SELECT DISTINCT MOD(timecreated / 86400 + 4, 7) AS dow,
-                              timecreated % 86400 / 14400      AS timeblock,
-                              userid
-                FROM {logstore_standard_log}
-               WHERE courseid     = :courseid
-                 AND action       = :action
-                 AND contextlevel = :contextlevel
-                 AND timecreated >= :datefrom
-                 AND timecreated <= :dateto
-                 AND userid {$insql}";
-    $rs = $DB->get_recordset_sql($sql4b, $logparams);
-    foreach ($rs as $row) {
-        $uid = (int)$row->userid;
-        if (isset($students[$uid])) {
-            $heatstudents[(int)$row->dow][(int)$row->timeblock][] = [
-                'id'   => $uid,
-                'name' => fullname($students[$uid]),
-            ];
-        }
-    }
-    $rs->close();
-    foreach ($heatstudents as $d => $blocks) {
-        foreach ($blocks as $b => $entries) {
-            usort($heatstudents[$d][$b], fn($a, $b) => strcmp($a['name'], $b['name']));
-        }
-    }
-
-    // Weekly interactions per student for sparklines (604800 = seconds in a week).
-    $sql5 = "SELECT userid,
-                    (timecreated / 604800) * 604800 AS weekts,
-                    COUNT(*)                        AS cnt
-               FROM {logstore_standard_log}
-              WHERE courseid     = :courseid
-                AND action       = :action
-                AND contextlevel = :contextlevel
-                AND timecreated >= :datefrom
-                AND timecreated <= :dateto
-                AND userid {$insql}
-              GROUP BY userid, timecreated / 604800
-              ORDER BY userid, weekts";
-    $weekdata = []; // Keyed by uid then week timestamp: view count.
-    $rs = $DB->get_recordset_sql($sql5, $logparams);
-    foreach ($rs as $row) {
-        $weekdata[$row->userid][(int)$row->weekts] = (int)$row->cnt;
-    }
-    $rs->close();
 }
+
+$weekdata = []; // Filled later via charts.php (AJAX).
 
 // Course-level visits per student (course home page views).
 $coursevisits      = []; // Keyed by userid: visit count.
@@ -928,13 +813,21 @@ $rescols = $hasanycompletion ? 8 : 7;
 $hasconexiones = \report_courseradar\conexiones_client::is_configured();
 $stucols = 9 + ($hasanycompletion ? 1 : 0) + ($hasdedication ? 1 : 0) + ($hasconexiones ? 2 : 0);
 $conexrows = [];
-$conexlatest = 0;
+$conexfreshn = 0;
+$conexoldest = 0;
+$conextotal  = 0;
 if ($hasconexiones && !empty($students)) {
     $conexrows = \report_courseradar\conexiones_store::get_course($courseid);
     \report_courseradar\conexiones_store::ask_many($courseid, array_keys($students));
-    foreach ($conexrows as $crow) {
-        if ((int)$crow->timefetched > $conexlatest) {
-            $conexlatest = (int)$crow->timefetched;
+    $conextotal = count($students);
+    foreach ($students as $uid => $stu) {
+        $crow = $conexrows[$uid] ?? null;
+        if (\report_courseradar\conexiones_store::is_fresh($crow)) {
+            $conexfreshn++;
+            $tf = (int)$crow->timefetched;
+            if ($tf && ($conexoldest === 0 || $tf < $conexoldest)) {
+                $conexoldest = $tf;
+            }
         }
     }
 }
@@ -968,6 +861,14 @@ tr.cr-student-row:hover  { background: #f0f7ff; }
 .cr-act-icon.cr-act-done .cr-act-cnt { background:#198754; }
 .cr-act-grid          { display:flex; flex-wrap:wrap; gap:3px; }
 .cr-zero              { color: #adb5bd; }
+.cr-dtabs             { display: flex; gap: .25rem; margin-bottom: .75rem; }
+.cr-dtab              { border: 0; background: #f0f2f5; color: #495057; border-radius: 999px; padding: .2rem .75rem; font-size: .8rem; font-weight: 600; cursor: pointer; }
+.cr-dtab.active       { background: #0d6efd; color: #fff; }
+.cr-ses-chip          { display: inline-flex; align-items: center; gap: .35rem; background: #f4f6f8; border-radius: 999px; padding: .2rem .65rem; font-size: .75rem; margin: 0 .3rem .3rem 0; white-space: nowrap; }
+.cr-ses-chip .cr-ses-dur { font-weight: 700; }
+.cr-detail-sec        { margin-bottom: .4rem; }
+.cr-detail-sec-name   { font-size: .7rem; color: #6c757d; font-weight: 600; margin-bottom: .15rem; }
+.cr-conex-block       { margin-bottom: .65rem; }
 .cr-conex-updating    { opacity: .45; }
 @keyframes cr-conex-flash {
   from { background-color: #d1e7dd; }
@@ -1082,6 +983,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     crLoadConexiones();
+    crLoadCharts();
 });
 
 function crLoadConexiones() {
@@ -1094,27 +996,51 @@ function crLoadConexiones() {
     var queue = [];
     var inflight = 0;
     var pending = 0;
+    var waitingExport = false;
 
-    function setStatusUpdating() {
+    function updateConexStatus() {
         var el = document.getElementById('cr-conex-status');
         if (!el) {
             return;
         }
+        var all = document.querySelectorAll('[data-cr-conexiones]');
+        var total = all.length;
+        var done = 0;
+        var oldest = 0;
+        all.forEach(function(c) {
+            if (c.getAttribute('data-cr-fresh') !== '1') {
+                return;
+            }
+            done++;
+            var ts = parseInt(c.getAttribute('data-timefetched') || '0', 10);
+            if (ts && (oldest === 0 || ts < oldest)) {
+                oldest = ts;
+            }
+        });
+        if (total > 0 && done === total) {
+            var when = oldest ? new Date(oldest * 1000).toLocaleString(undefined, {
+                day: 'numeric', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            }) : '';
+            var tpl = el.getAttribute('data-allupdated') || '{$a}';
+            el.textContent = tpl.replace('{$a}', when);
+            if (waitingExport) {
+                waitingExport = false;
+                crDownloadZoomCsv();
+            }
+            return;
+        }
+        var ptpl = el.getAttribute('data-progress') || '';
+        el.innerHTML = '<span class="spinner-border spinner-border-sm text-muted" role="status"></span> '
+            + ptpl.replace('DONE', String(done)).replace('TOTAL', String(total));
+    }
+    function setStatusUpdating() {
         pending++;
-        el.textContent = el.getAttribute('data-updating') || '';
+        updateConexStatus();
     }
     function setStatusDone(ts) {
-        var el = document.getElementById('cr-conex-status');
-        if (!el) {
-            return;
-        }
         pending = Math.max(0, pending - 1);
-        if (pending > 0) {
-            return;
-        }
-        var tpl = el.getAttribute('data-updated') || '{$a}';
-        var when = ts ? new Date(ts * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
-        el.textContent = tpl.replace('{$a}', when);
+        updateConexStatus();
     }
     function paintCell(cell, label, seconds, changed) {
         if (!cell) {
@@ -1139,8 +1065,27 @@ function crLoadConexiones() {
         var delayedCell = document.querySelector('[data-cr-conexiones-delayed="' + uid + '"]');
         var oldLive = liveCell ? liveCell.textContent : '';
         var oldDelayed = delayedCell ? delayedCell.textContent : '';
-        if (liveCell) { liveCell.classList.add('cr-conex-updating'); }
-        if (delayedCell) { delayedCell.classList.add('cr-conex-updating'); }
+        var spin = ' <span class="spinner-border spinner-border-sm text-muted" role="status"></span>';
+        if (liveCell) {
+            liveCell.classList.add('cr-conex-updating');
+            if (!liveCell.querySelector('.spinner-border')) {
+                if (!oldLive.replace(/\s/g, '')) {
+                    liveCell.innerHTML = spin;
+                } else {
+                    liveCell.insertAdjacentHTML('beforeend', spin);
+                }
+            }
+        }
+        if (delayedCell) {
+            delayedCell.classList.add('cr-conex-updating');
+            if (!delayedCell.querySelector('.spinner-border')) {
+                if (!oldDelayed.replace(/\s/g, '')) {
+                    delayedCell.innerHTML = spin;
+                } else {
+                    delayedCell.insertAdjacentHTML('beforeend', spin);
+                }
+            }
+        }
         setStatusUpdating();
         var url = M.cfg.wwwroot + '/report/courseradar/conexiones.php'
             + '?id=' + courseid + '&userid=' + uid + '&refresh=1&sesskey=' + encodeURIComponent(sesskey);
@@ -1152,7 +1097,14 @@ function crLoadConexiones() {
                 paintCell(liveCell, live, (data.live && data.live.seconds) ? data.live.seconds : 0, live !== oldLive);
                 paintCell(delayedCell, delayed, (data.delayed && data.delayed.seconds) ? data.delayed.seconds : 0,
                     delayed !== oldDelayed);
-                if (liveCell) { liveCell.setAttribute('data-cr-fresh', '1'); }
+                if (liveCell) {
+                    liveCell.setAttribute('data-cr-fresh', '1');
+                    liveCell.setAttribute('data-timefetched', data.timefetched || 0);
+                    liveCell.setAttribute('data-live-rows', JSON.stringify((data.live && data.live.rows) || []));
+                    liveCell.setAttribute('data-delayed-rows', JSON.stringify((data.delayed && data.delayed.rows) || []));
+                    liveCell.setAttribute('data-live-label', (data.live && data.live.label) || '');
+                    liveCell.setAttribute('data-delayed-label', (data.delayed && data.delayed.label) || '');
+                }
                 setStatusDone(data.timefetched || 0);
             })
             .catch(function() {
@@ -1179,28 +1131,66 @@ function crLoadConexiones() {
         next();
     }
 
-    if ('IntersectionObserver' in window) {
-        var io = new IntersectionObserver(function(entries) {
-            entries.forEach(function(entry) {
-                if (!entry.isIntersecting) {
-                    return;
-                }
-                var cell = entry.target;
-                io.unobserve(cell);
-                if (cell.getAttribute('data-cr-fresh') === '1') {
-                    return;
-                }
-                enqueue(cell);
-            });
-        }, {rootMargin: '80px'});
-        cells.forEach(function(cell) { io.observe(cell); });
-    } else {
-        cells.forEach(function(cell) {
+    cells.forEach(function(cell) {
+        if (cell.getAttribute('data-cr-fresh') !== '1') {
+            enqueue(cell);
+        }
+    });
+    updateConexStatus();
+
+    window.crExportZoom = function() {
+        var btn = document.getElementById('cr-conex-export');
+        if (btn) {
+            btn.disabled = true;
+        }
+        var stale = [];
+        document.querySelectorAll('[data-cr-conexiones]').forEach(function(cell) {
             if (cell.getAttribute('data-cr-fresh') !== '1') {
-                enqueue(cell);
+                stale.push(cell);
             }
         });
+        if (!stale.length) {
+            crDownloadZoomCsv();
+            return;
+        }
+        waitingExport = true;
+        stale.forEach(function(cell) {
+            cell.setAttribute('data-cr-queued', '0');
+            enqueue(cell);
+        });
+        updateConexStatus();
+    };
+}
+
+function crDownloadZoomCsv() {
+    var btn = document.getElementById('cr-conex-export');
+    if (btn) {
+        btn.disabled = false;
     }
+    var liveStr = <?php echo json_encode(get_string('conexioneslive', 'report_courseradar')); ?>;
+    var recStr = <?php echo json_encode(get_string('conexionesdelayed', 'report_courseradar')); ?>;
+    var studentStr = <?php echo json_encode(get_string('student', 'report_courseradar')); ?>;
+    var lines = [[studentStr, 'Username', liveStr, recStr]];
+    document.querySelectorAll('[data-cr-conexiones]').forEach(function(cell) {
+        var name = cell.getAttribute('data-fullname') || '';
+        var user = cell.getAttribute('data-username') || '';
+        var live = cell.getAttribute('data-live-label') || '';
+        var rec = cell.getAttribute('data-delayed-label') || '';
+        lines.push([name, user, live, rec]);
+    });
+    var csv = lines.map(function(cols) {
+        return cols.map(function(c) {
+            c = String(c == null ? '' : c).replace(/"/g, '""');
+            return /[",;\n]/.test(c) ? '"' + c + '"' : c;
+        }).join(';');
+    }).join('\r\n');
+    var blob = new Blob(['\ufeff' + csv], {type: 'text/csv;charset=utf-8;'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'courseradar-zoom-<?php echo (int)$courseid; ?>.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
 }
 
 /* ── Toggle fila de detalle ────────────────────────────────────────────────── */
@@ -1213,6 +1203,103 @@ function crToggle(btn, rowId) {
     } else {
         row.style.display = 'table-row';
         btn.classList.add('cr-btn-active');
+        var slot = row.querySelector('[data-cr-conex-detail]');
+        if (slot && slot.getAttribute('data-loaded') !== '1') {
+            crLoadConexDetail(slot);
+        }
+    }
+}
+
+function crLoadConexDetail(slot) {
+    var uid = slot.getAttribute('data-cr-conex-detail');
+    var courseid = <?php echo (int)$courseid; ?>;
+    var sesskey = (typeof M !== 'undefined' && M.cfg) ? M.cfg.sesskey : '';
+    var base = M.cfg.wwwroot + '/report/courseradar/conexiones.php'
+        + '?id=' + courseid + '&userid=' + uid + '&sesskey=' + encodeURIComponent(sesskey);
+    var load = function(refresh) {
+        var url = base + (refresh ? '&refresh=1' : '');
+        fetch(url, {credentials: 'same-origin'})
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var liveRows = crConexRows(data.live);
+                var delayedRows = crConexRows(data.delayed);
+                var hasTime = (data.live && data.live.seconds) || (data.delayed && data.delayed.seconds);
+                if (!refresh && !liveRows.length && !delayedRows.length && hasTime) {
+                    load(true);
+                    return;
+                }
+                slot.setAttribute('data-loaded', '1');
+                slot.innerHTML = crRenderConexDetail(data);
+            })
+            .catch(function() {
+                slot.textContent = '—';
+            });
+    };
+    load(true);
+}
+
+function crConexRows(block) {
+    if (!block || !block.rows) {
+        return [];
+    }
+    if (Array.isArray(block.rows)) {
+        return block.rows;
+    }
+    return Object.keys(block.rows).map(function(k) { return block.rows[k]; });
+}
+
+function crRenderConexDetail(data) {
+    var liveRows = crConexRows(data.live);
+    var delayedRows = crConexRows(data.delayed);
+    var liveLabel = (data.live && data.live.label) ? data.live.label : '—';
+    var delayedLabel = (data.delayed && data.delayed.label) ? data.delayed.label : '—';
+    var h = '<div class="cr-conex-block">';
+    h += '<small class="fw-semibold d-block mb-1">' + <?php echo json_encode(get_string('conexioneslive', 'report_courseradar')); ?>
+        + ' <span class="text-muted fw-normal">(' + liveLabel + ')</span></small>';
+    h += crConexRowsList(liveRows, true);
+    h += '</div><div class="cr-conex-block mb-0">';
+    h += '<small class="fw-semibold d-block mb-1">' + <?php echo json_encode(get_string('conexionesdelayed', 'report_courseradar')); ?>
+        + ' <span class="text-muted fw-normal">(' + delayedLabel + ')</span></small>';
+    h += crConexRowsList(delayedRows, false);
+    h += '</div>';
+    return h;
+}
+
+function crConexRowsList(rows, isLive) {
+    if (!rows.length) {
+        return '<p class="small text-muted mb-0">' + <?php echo json_encode(get_string('conexionesnodetail', 'report_courseradar')); ?> + '</p>';
+    }
+    var h = '';
+    rows.forEach(function(row) {
+        var when = row.when || row.title || '';
+        var dur = row.duration || '';
+        var span = '';
+        if (row.start || row.end) {
+            span = (row.start || '') + (row.start && row.end ? '–' : '') + (row.end || '');
+        }
+        h += '<span class="cr-ses-chip"><span>' + when + '</span>';
+        if (isLive && span) {
+            h += '<span class="text-muted">' + span + '</span>';
+        }
+        if (dur) {
+            h += '<span class="cr-ses-dur">' + dur + '</span>';
+        }
+        h += '</span>';
+    });
+    return h;
+}
+
+function crSwitchDetailTab(btn, panel) {
+    var wrap = btn.closest('.cr-detail-inner');
+    if (!wrap) {
+        return;
+    }
+    wrap.querySelectorAll('.cr-dtab').forEach(function(b) { b.classList.remove('active'); });
+    wrap.querySelectorAll('.cr-dtab-panel').forEach(function(p) { p.classList.add('d-none'); });
+    btn.classList.add('active');
+    var target = wrap.querySelector('[data-cr-panel="' + panel + '"]');
+    if (target) {
+        target.classList.remove('d-none');
     }
 }
 
@@ -1398,7 +1485,150 @@ function crHeatmapClick(td) {
 }
 function crHeatmapClose() {
     if (crHeatmapSelected) { crHeatmapSelected.classList.remove('cr-heatmap-selected'); crHeatmapSelected = null; }
-    document.getElementById('cr-heatmap-panel').classList.add('d-none');
+    var panel = document.getElementById('cr-heatmap-panel');
+    if (panel) { panel.classList.add('d-none'); }
+}
+
+function crLoadCharts() {
+    var row = document.getElementById('cr-charts-row');
+    if (!row || typeof M === 'undefined') {
+        return;
+    }
+    var url = M.cfg.wwwroot + '/report/courseradar/charts.php'
+        + '?id=<?php echo (int)$courseid; ?>'
+        + '&datefrom=<?php echo urlencode($datefromformat); ?>'
+        + '&dateto=<?php echo urlencode($datetoformat); ?>'
+        + '&sesskey=' + encodeURIComponent(M.cfg.sesskey);
+    fetch(url, {credentials: 'same-origin'})
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            crRenderHeatmap(data);
+            crRenderSparklines(data.sparklines || {}, data.timeslabel || '', data.weekvslabel || '');
+            if (data.chart && data.chart.values && data.chart.values.length) {
+                if (data.chart.weekly) {
+                    var w = document.getElementById('cr-chart-weekly');
+                    if (w) { w.classList.remove('d-none'); }
+                }
+                var loading = document.getElementById('cr-chart-loading');
+                var canvas = document.getElementById('cr-activity-chart');
+                if (loading) { loading.classList.add('d-none'); }
+                if (canvas) { canvas.classList.remove('d-none'); }
+                if (typeof require === 'function') {
+                    require(['core/chartjs'], function(Chartjs) {
+                        new Chartjs(canvas, {
+                            type: 'line',
+                            data: {
+                                labels: data.chart.labels,
+                                datasets: [{
+                                    data: data.chart.values,
+                                    borderColor: '#0d6efd',
+                                    backgroundColor: 'rgba(13,110,253,.08)',
+                                    fill: true,
+                                    tension: 0.35,
+                                    pointRadius: 2
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                plugins: { legend: { display: false } },
+                                scales: { y: { beginAtZero: true } }
+                            }
+                        });
+                    });
+                }
+            } else {
+                var loading = document.getElementById('cr-chart-loading');
+                if (loading) { loading.textContent = '—'; }
+            }
+        })
+        .catch(function() {
+            var loading = document.getElementById('cr-chart-loading');
+            if (loading) { loading.textContent = '—'; }
+        });
+}
+
+function crRenderHeatmap(data) {
+    var body = document.getElementById('cr-heatmap-body');
+    if (!body || !data.heatmap) {
+        return;
+    }
+    var heatmax = data.heatmax || 1;
+    var html = '<table class="cr-heatmap"><thead><tr><th></th>';
+    (data.timeslots || []).forEach(function(slot) {
+        html += '<th>' + slot + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+    (data.dayorder || []).forEach(function(dow) {
+        html += '<tr><th class="text-end pe-2">' + (data.daynames[dow] || '') + '</th>';
+        for (var b = 0; b < 6; b++) {
+            var val = (data.heatmap[dow] && data.heatmap[dow][b]) ? data.heatmap[dow][b] : 0;
+            var intensity = Math.round((val / heatmax) * 100) / 100;
+            var bg = val > 0 ? 'background:rgba(13,110,253,' + intensity + ');' : 'background:#f0f2f5;';
+            var color = intensity > 0.5 ? 'color:#fff;' : '';
+            var extra = val === 0 ? 'cursor:default;' : '';
+            html += '<td style="' + bg + color + extra + '"';
+            if (val > 0) {
+                var students = (data.heatstudents[dow] && data.heatstudents[dow][b]) ? data.heatstudents[dow][b] : [];
+                html += ' data-label="' + (data.daynames[dow] || '') + ' ' + (data.timeslots[b] || '') + '"';
+                html += " data-students='" + JSON.stringify(students).replace(/'/g, '&#39;') + "'";
+                html += ' onclick="crHeatmapClick(this)"';
+            }
+            html += '>' + (val > 0 ? val : '') + '</td>';
+        }
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<div id="cr-heatmap-panel" class="cr-heatmap-panel mt-3 d-none">'
+        + '<div class="d-flex justify-content-between align-items-center mb-2">'
+        + '<strong id="cr-heatmap-panel-title" class="small"></strong>'
+        + '<button type="button" class="btn-close" style="font-size:.7rem;" onclick="crHeatmapClose()"></button>'
+        + '</div><div id="cr-heatmap-panel-body" class="d-flex flex-wrap gap-2"></div></div>';
+    body.innerHTML = html;
+}
+
+function crRenderSparklines(sparklines, timeslabel, weekvslabel) {
+    Object.keys(sparklines).forEach(function(uid) {
+        var slot = document.querySelector('[data-cr-spark="' + uid + '"]');
+        var bars = sparklines[uid] || [];
+        if (!slot) {
+            return;
+        }
+        if (!bars.length) {
+            slot.innerHTML = '';
+            return;
+        }
+        var last = bars[bars.length - 1].cnt;
+        var prev = bars.length > 1 ? bars[bars.length - 2].cnt : 0;
+        var icon = '—';
+        var cls = 'text-muted';
+        var pctstr = '';
+        if (prev === 0 && last === 0) {
+            icon = '—';
+        } else if (prev === 0) {
+            icon = '↑'; cls = 'text-success'; pctstr = '+100%';
+        } else {
+            var pct = Math.round(((last - prev) / prev) * 100);
+            icon = pct > 0 ? '↑' : (pct < 0 ? '↓' : '→');
+            cls = pct > 0 ? 'text-success' : (pct < 0 ? 'text-danger' : 'text-muted');
+            pctstr = (pct > 0 ? '+' : '') + pct + '%';
+        }
+        var h = '<small class="text-muted fw-semibold d-block mb-1">'
+            + <?php echo json_encode(get_string('weeklyactivity', 'report_courseradar')); ?>
+            + ' <span class="' + cls + ' ms-2">' + icon + ' ' + pctstr + '</span>'
+            + ' <span class="text-muted ms-1">' + (weekvslabel || '') + '</span></small>'
+            + '<div class="cr-sparkline">';
+        bars.forEach(function(bar) {
+            h += '<div class="cr-spark-bar" style="height:' + bar.height + '%" title="'
+                + bar.label + ': ' + bar.cnt + ' ' + timeslabel + '"></div>';
+        });
+        h += '</div>';
+        slot.innerHTML = h;
+    });
+    document.querySelectorAll('[data-cr-spark]').forEach(function(slot) {
+        if (slot.querySelector('.spinner-border')) {
+            slot.innerHTML = '';
+        }
+    });
 }
 
 /* ── Ordenar tabla de estudiantes ──────────────────────────────────────────── */
@@ -1957,34 +2187,27 @@ function crDrawScatter() {
 </div>
 <?php endif; ?>
 
-<!-- ── Gráfico de actividad + Heatmap ───────────────────────────────────── -->
-<?php if (!empty($chartvalues) || array_sum(array_map('array_sum', $heatmap)) > 0): ?>
-<div class="row g-3 mb-4 cr-charts-row">
-
-  <!-- Gráfico temporal -->
-  <?php if (!empty($chartvalues)): ?>
-  <div class="col-xl-7">
+<!-- ── Gráfico de actividad + Heatmap (loaded via charts.php) ───────────── -->
+<?php if ($totalstudents > 0): ?>
+<div class="row g-3 mb-4 cr-charts-row" id="cr-charts-row">
+  <div class="col-xl-7" id="cr-chart-col">
     <div class="card cr-card h-100">
       <div class="card-header bg-white border-bottom py-3">
         <h5 class="mb-0 fw-bold">
           <?php echo get_string('activityovertime', 'report_courseradar'); ?>
-          <?php if ($chartweekly): ?>
-            <small class="text-muted fw-normal ms-2 small">
-              <?php echo get_string('weeklyaggregated', 'report_courseradar'); ?>
-            </small>
-          <?php endif; ?>
+          <small class="text-muted fw-normal ms-2 small d-none" id="cr-chart-weekly">
+            <?php echo get_string('weeklyaggregated', 'report_courseradar'); ?>
+          </small>
         </h5>
         <small class="text-muted"><?php echo get_string('activityovertime_desc', 'report_courseradar'); ?></small>
       </div>
-      <div class="card-body">
-        <?php echo $OUTPUT->render($chartobj); ?>
+      <div class="card-body" id="cr-chart-body">
+        <div class="text-muted small py-4 text-center" id="cr-chart-loading"><?php echo report_courseradar_loading(true); ?></div>
+        <canvas id="cr-activity-chart" class="d-none" height="120"></canvas>
       </div>
     </div>
   </div>
-  <?php endif; ?>
-
-  <!-- Heatmap -->
-  <div class="col-xl-<?php echo !empty($chartvalues) ? '5' : '12'; ?>">
+  <div class="col-xl-5" id="cr-heat-col">
     <div class="card cr-card h-100">
       <div class="card-header bg-white border-bottom py-3">
         <h5 class="mb-0 fw-bold">
@@ -1992,55 +2215,11 @@ function crDrawScatter() {
         </h5>
         <small class="text-muted"><?php echo get_string('activitypattern_desc', 'report_courseradar'); ?></small>
       </div>
-      <div class="card-body p-3 overflow-auto">
-        <table class="cr-heatmap">
-          <thead>
-            <tr>
-              <th></th>
-              <?php foreach ($timeslots as $slot): ?>
-              <th><?php echo $slot; ?></th>
-              <?php endforeach; ?>
-            </tr>
-          </thead>
-          <tbody>
-            <?php foreach ($dayorder as $dow): ?>
-            <tr>
-              <th class="text-end pe-2"><?php echo $daynames[$dow]; ?></th>
-              <?php for ($b = 0; $b < 6; $b++): ?>
-              <?php
-                $val      = $heatmap[$dow][$b];
-                $intensity = round($val / $heatmax, 2);
-                $bg = $val > 0
-                    ? 'background:rgba(13,110,253,' . $intensity . ');'
-                    : 'background:#f0f2f5;';
-                $color = $intensity > 0.5 ? 'color:#fff;' : '';
-              ?>
-              <td style="<?php echo $bg . $color . ($val === 0 ? 'cursor:default;' : ''); ?>"
-                  title="<?php echo s($daynames[$dow] . ' ' . $timeslots[$b] . ': ' . $val); ?>"
-                  <?php if ($val > 0): ?>
-                  data-label="<?php echo s($daynames[$dow] . ' ' . $timeslots[$b]); ?>"
-                  data-students="<?php echo s(json_encode($heatstudents[$dow][$b])); ?>"
-                  onclick="crHeatmapClick(this)"
-                  <?php endif; ?>>
-                <?php echo $val > 0 ? $val : ''; ?>
-              </td>
-              <?php endfor; ?>
-            </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-        <div id="cr-heatmap-panel" class="cr-heatmap-panel mt-3 d-none">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <strong id="cr-heatmap-panel-title" class="small"></strong>
-            <button type="button" class="btn-close" style="font-size:.7rem;"
-                    onclick="crHeatmapClose()"></button>
-          </div>
-          <div id="cr-heatmap-panel-body" class="d-flex flex-wrap gap-2"></div>
-        </div>
+      <div class="card-body p-3 overflow-auto" id="cr-heatmap-body">
+        <div class="text-muted small py-4 text-center"><?php echo report_courseradar_loading(true); ?></div>
       </div>
     </div>
   </div>
-
 </div>
 <?php endif; ?>
 
@@ -2451,17 +2630,24 @@ function crDrawScatter() {
     <small class="text-muted"><?php echo get_string('studentengagement_desc', 'report_courseradar'); ?></small>
     <?php if ($hasconexiones): ?>
     <div class="small text-muted mt-1" id="cr-conex-status"
-         data-updating="<?php echo s(get_string('conexionesupdating', 'report_courseradar')); ?>"
-         data-updated="<?php echo s(get_string('conexionesupdated', 'report_courseradar')); ?>">
+         data-progress="<?php echo s(get_string('conexionesprogress', 'report_courseradar',
+             (object)['done' => 'DONE', 'total' => 'TOTAL'])); ?>"
+         data-allupdated="<?php echo s(get_string('conexionesallupdated', 'report_courseradar')); ?>">
       <?php
-        if ($conexlatest) {
-            echo get_string('conexionesupdated', 'report_courseradar',
-                userdate($conexlatest, get_string('strftimetime', 'langconfig')));
+        if ($conextotal > 0 && $conexfreshn === $conextotal && $conexoldest) {
+            echo get_string('conexionesallupdated', 'report_courseradar',
+                userdate($conexoldest, get_string('strftimedatetimeshort', 'langconfig')));
         } else {
-            echo get_string('conexionesupdating', 'report_courseradar');
+            echo report_courseradar_loading() . ' '
+                . get_string('conexionesprogress', 'report_courseradar',
+                    (object)['done' => $conexfreshn, 'total' => $conextotal]);
         }
       ?>
     </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary mt-2" id="cr-conex-export"
+            onclick="crExportZoom()">
+      <?php echo get_string('conexionesexport', 'report_courseradar'); ?>
+    </button>
     <?php endif; ?>
   </div>
   <?php if ($totalstudents > 5): ?>
@@ -2480,6 +2666,22 @@ function crDrawScatter() {
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('student', 'report_courseradar'); ?>
             </th>
+            <?php if ($hasconexiones): ?>
+            <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('conexioneslive', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('conexioneslive_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
+            <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
+                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
+              <?php echo get_string('conexionesdelayed', 'report_courseradar'); ?>
+              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
+                <?php echo get_string('conexionesdelayed_desc', 'report_courseradar'); ?>
+              </small>
+            </th>
+            <?php endif; ?>
             <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
                 title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
               <?php echo get_string('resourcesvisited', 'report_courseradar'); ?>
@@ -2514,22 +2716,6 @@ function crDrawScatter() {
               <?php echo get_string('dedication', 'report_courseradar'); ?>
               <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
                 <?php echo get_string('dedication_desc', 'report_courseradar'); ?>
-              </small>
-            </th>
-            <?php endif; ?>
-            <?php if ($hasconexiones): ?>
-            <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
-                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
-              <?php echo get_string('conexioneslive', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
-                <?php echo get_string('conexioneslive_desc', 'report_courseradar'); ?>
-              </small>
-            </th>
-            <th class="text-center cr-th-sort" onclick="crSortStudents(this,true)"
-                title="<?php echo get_string('sortby', 'report_courseradar'); ?>">
-              <?php echo get_string('conexionesdelayed', 'report_courseradar'); ?>
-              <small class="d-block fw-normal" style="font-size:.7rem;color:#6c757d;">
-                <?php echo get_string('conexionesdelayed_desc', 'report_courseradar'); ?>
               </small>
             </th>
             <?php endif; ?>
@@ -2614,6 +2800,33 @@ function crDrawScatter() {
               <?php endif; ?>
             </td>
 
+            <?php if ($hasconexiones):
+                $crow = $conexrows[$uid] ?? null;
+                $conexfresh = \report_courseradar\conexiones_store::is_fresh($crow);
+                $livelabel = ($crow && (string)$crow->livelabel !== '') ? s($crow->livelabel) : report_courseradar_loading();
+                $delayedlabel = ($crow && (string)$crow->delayedlabel !== '') ? s($crow->delayedlabel) : report_courseradar_loading();
+                $livesecs = $crow ? (int)$crow->liveseconds : 0;
+                $delayedsecs = $crow ? (int)$crow->delayedseconds : 0;
+                $liverowsjson = ($crow && !empty($crow->liverows)) ? $crow->liverows : '[]';
+                $delayedrowsjson = ($crow && !empty($crow->delayedrows)) ? $crow->delayedrows : '[]';
+            ?>
+            <td class="text-center <?php echo ($crow && (string)$crow->livelabel !== '') ? 'fw-semibold' : 'text-muted'; ?>"
+                data-cr-conexiones="<?php echo (int)$uid; ?>"
+                data-cr-conexiones-live="<?php echo (int)$uid; ?>"
+                data-username="<?php echo s($stu->username ?? ''); ?>"
+                data-fullname="<?php echo s(fullname($stu)); ?>"
+                data-cr-fresh="<?php echo $conexfresh ? '1' : '0'; ?>"
+                data-timefetched="<?php echo $crow ? (int)$crow->timefetched : 0; ?>"
+                data-live-rows="<?php echo s($liverowsjson); ?>"
+                data-delayed-rows="<?php echo s($delayedrowsjson); ?>"
+                data-live-label="<?php echo s($crow ? (string)$crow->livelabel : ''); ?>"
+                data-delayed-label="<?php echo s($crow ? (string)$crow->delayedlabel : ''); ?>"
+                data-sort="<?php echo $livesecs; ?>"><?php echo $livelabel; ?></td>
+            <td class="text-center <?php echo ($crow && (string)$crow->delayedlabel !== '') ? 'fw-semibold' : 'text-muted'; ?>"
+                data-cr-conexiones-delayed="<?php echo (int)$uid; ?>"
+                data-sort="<?php echo $delayedsecs; ?>"><?php echo $delayedlabel; ?></td>
+            <?php endif; ?>
+
             <td class="text-center"
                 data-sort="<?php echo $visited; ?>">
               <span class="fw-semibold <?php echo $visited === 0 ? 'cr-zero' : ($visited === $totalmodules ? 'text-success' : ''); ?>">
@@ -2648,23 +2861,6 @@ function crDrawScatter() {
                 data-sort="<?php echo $dedsecs; ?>">
               <?php echo report_courseradar_format_dedication($dedsecs); ?>
             </td>
-            <?php endif; ?>
-            <?php if ($hasconexiones):
-                $crow = $conexrows[$uid] ?? null;
-                $conexfresh = \report_courseradar\conexiones_store::is_fresh($crow);
-                $livelabel = ($crow && (string)$crow->livelabel !== '') ? $crow->livelabel : '…';
-                $delayedlabel = ($crow && (string)$crow->delayedlabel !== '') ? $crow->delayedlabel : '…';
-                $livesecs = $crow ? (int)$crow->liveseconds : 0;
-                $delayedsecs = $crow ? (int)$crow->delayedseconds : 0;
-            ?>
-            <td class="text-center <?php echo ($crow && (string)$crow->livelabel !== '') ? 'fw-semibold' : 'text-muted'; ?>"
-                data-cr-conexiones="<?php echo (int)$uid; ?>"
-                data-cr-conexiones-live="<?php echo (int)$uid; ?>"
-                data-cr-fresh="<?php echo $conexfresh ? '1' : '0'; ?>"
-                data-sort="<?php echo $livesecs; ?>"><?php echo s($livelabel); ?></td>
-            <td class="text-center <?php echo ($crow && (string)$crow->delayedlabel !== '') ? 'fw-semibold' : 'text-muted'; ?>"
-                data-cr-conexiones-delayed="<?php echo (int)$uid; ?>"
-                data-sort="<?php echo $delayedsecs; ?>"><?php echo s($delayedlabel); ?></td>
             <?php endif; ?>
 
             <?php $lastcv = $lastcoursevisit[$uid] ?? 0; ?>
@@ -2730,98 +2926,62 @@ function crDrawScatter() {
           <tr id="<?php echo $studetailid; ?>" class="cr-detail-row" style="display:none;">
             <td colspan="<?php echo $stucols; ?>">
               <div class="cr-detail-inner p-3">
-                <div class="d-flex gap-3 mb-3 flex-wrap">
-                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#0d6efd22;border:1px solid #0d6efd55;flex-shrink:0;"></span><?php echo get_string('haveviewed', 'report_courseradar'); ?></small>
-                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#19875422;border:1px solid #19875455;flex-shrink:0;"></span><?php echo get_string('completion', 'report_courseradar'); ?></small>
-                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#f0f2f5;border:1px solid #dee2e6;flex-shrink:0;"></span><?php echo get_string('haventviewed', 'report_courseradar'); ?></small>
+                <div class="cr-dtabs">
+                  <?php if ($hasconexiones): ?>
+                  <button type="button" class="cr-dtab active" onclick="event.stopPropagation(); crSwitchDetailTab(this,'zoom')">
+                    <?php echo get_string('conexioneslive', 'report_courseradar'); ?> / <?php echo get_string('conexionesdelayed', 'report_courseradar'); ?>
+                  </button>
+                  <?php endif; ?>
+                  <button type="button" class="cr-dtab <?php echo $hasconexiones ? '' : 'active'; ?>"
+                          onclick="event.stopPropagation(); crSwitchDetailTab(this,'res')">
+                    <?php echo get_string('resourcesvisited', 'report_courseradar'); ?>
+                  </button>
+                </div>
+                <?php if ($hasconexiones): ?>
+                <div class="cr-dtab-panel cr-conex-detail" data-cr-panel="zoom" data-cr-conex-detail="<?php echo (int)$uid; ?>">
+                  <?php echo report_courseradar_loading(true); ?>
+                </div>
+                <?php endif; ?>
+                <div class="cr-dtab-panel cr-detail-modules <?php echo $hasconexiones ? 'd-none' : ''; ?>" data-cr-panel="res">
+                <div class="d-flex gap-2 mb-2 flex-wrap">
+                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#0d6efd22;border:1px solid #0d6efd55;flex-shrink:0;"></span><?php echo get_string('haveviewed', 'report_courseradar'); ?></small>
+                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#19875422;border:1px solid #19875455;flex-shrink:0;"></span><?php echo get_string('completion', 'report_courseradar'); ?></small>
+                  <small class="text-muted d-flex align-items-center gap-1"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#f0f2f5;border:1px solid #dee2e6;flex-shrink:0;"></span><?php echo get_string('haventviewed', 'report_courseradar'); ?></small>
                 </div>
                 <?php foreach ($bysection as $snum => $section): ?>
-                <?php
-                  $secvisited = [];
-                  $secunseen  = [];
-                  foreach ($section['cms'] as $cm) {
-                      $cmid = $cm->id;
-                      if (isset($studentlog[$uid][$cmid])) {
-                          $secvisited[] = $cm;
-                      } else {
-                          $secunseen[] = $cm;
-                      }
-                  }
-                ?>
-                <div class="mb-3">
-                  <small class="text-muted fw-semibold d-block mb-1"><?php echo $section['name']; ?></small>
-                  <div class="d-flex align-items-start">
-                    <div class="cr-act-grid me-2 pe-2 border-end">
-                      <?php foreach ($secvisited as $cm): ?>
+                <div class="cr-detail-sec">
+                  <div class="cr-detail-sec-name"><?php echo $section['name']; ?></div>
+                  <div class="cr-act-grid">
+                      <?php foreach ($section['cms'] as $cm): ?>
                       <?php
                         $cmid = $cm->id;
+                        $seen = isset($studentlog[$uid][$cmid]);
                         $svcount = $studentlog[$uid][$cmid] ?? 0;
-                        $completed_stu = $completionenabled && $cm->completion > 0
+                        $completed_stu = $seen && $completionenabled && $cm->completion > 0
                             && isset($completionbyuser[$cmid][$uid]);
-                        $bgcol = $completed_stu ? '#198754' : '#0d6efd';
-                        $title = s(format_string($cm->name)) . ' (' . $svcount . ' ' . get_string('times', 'report_courseradar') . ')';
-                        if ($completed_stu) { $title .= ' ✓'; }
+                        $bgcol = !$seen ? '#adb5bd' : ($completed_stu ? '#198754' : '#0d6efd');
+                        $title = s(format_string($cm->name));
+                        if ($seen) {
+                            $title .= ' (' . $svcount . ' ' . get_string('times', 'report_courseradar') . ')';
+                            if ($completed_stu) {
+                                $title .= ' ✓';
+                            }
+                        }
                       ?>
                       <span class="cr-act-icon <?php echo $completed_stu ? 'cr-act-done' : ''; ?>"
-                            style="background:<?php echo $bgcol; ?>22;border:1px solid <?php echo $bgcol; ?>55;"
+                            style="background:<?php echo $seen ? $bgcol . '22' : '#f0f2f5'; ?>;border:1px solid <?php echo $bgcol; ?>55;"
                             title="<?php echo $title; ?>">
-                        <img src="<?php echo $cm->get_icon_url()->out(false); ?>" alt="">
-                        <?php if ($svcount > 1): ?>
+                        <img src="<?php echo $cm->get_icon_url()->out(false); ?>" alt=""
+                             style="<?php echo $seen ? '' : 'opacity:.4;'; ?>">
+                        <?php if ($seen && $svcount > 1): ?>
                         <span class="cr-act-cnt <?php echo $completed_stu ? 'bg-success' : ''; ?>"><?php echo $svcount; ?></span>
                         <?php endif; ?>
                       </span>
                       <?php endforeach; ?>
-                      <?php if (empty($secvisited)): ?>
-                        <small class="text-muted fst-italic"><?php echo get_string('noviewsyet', 'report_courseradar'); ?></small>
-                      <?php endif; ?>
-                    </div>
-                    <?php if (!empty($secunseen)): ?>
-                    <div class="cr-act-grid ps-2">
-                      <?php foreach ($secunseen as $cm): ?>
-                      <span class="cr-act-icon"
-                            style="background:#f0f2f5;border:1px solid #dee2e6;"
-                            title="<?php echo s(format_string($cm->name)); ?>">
-                        <img src="<?php echo $cm->get_icon_url()->out(false); ?>" alt="" style="opacity:.4;">
-                      </span>
-                      <?php endforeach; ?>
-                    </div>
-                    <?php endif; ?>
                   </div>
                 </div>
                 <?php endforeach; ?>
-                <?php if (!empty($sparklines[$uid])): ?>
-                <?php
-                  $spbars  = $sparklines[$uid];
-                  $spcount = count($spbars);
-                  $splast  = $spbars[$spcount - 1]['cnt'];
-                  $spprev  = $spcount > 1 ? $spbars[$spcount - 2]['cnt'] : 0;
-                  if ($spprev === 0 && $splast === 0):
-                    $spicon = '—'; $spclass = 'text-muted'; $sppctstr = '';
-                  elseif ($spprev === 0):
-                    $spicon = '↑'; $spclass = 'text-success'; $sppctstr = '+100%';
-                  else:
-                    $sppct_n = round((($splast - $spprev) / $spprev) * 100);
-                    $spicon  = $sppct_n > 0 ? '↑' : ($sppct_n < 0 ? '↓' : '→');
-                    $spclass = $sppct_n > 0 ? 'text-success' : ($sppct_n < 0 ? 'text-danger' : 'text-muted');
-                    $sppctstr = $sppct_n > 0 ? '+' . $sppct_n . '%' : $sppct_n . '%';
-                  endif;
-                ?>
-                <div class="mt-3">
-                  <small class="text-muted fw-semibold d-block mb-1">
-                    <?php echo get_string('weeklyactivity', 'report_courseradar'); ?>
-                    <span class="<?php echo $spclass; ?> ms-2"><?php echo $spicon; ?> <?php echo $sppctstr; ?></span>
-                    <span class="text-muted ms-1"><?php echo get_string('weekvspreview', 'report_courseradar'); ?></span>
-                  </small>
-                  <div class="cr-sparkline">
-                    <?php foreach ($spbars as $bar): ?>
-                    <div class="cr-spark-bar"
-                         style="height:<?php echo $bar['height']; ?>%"
-                         title="<?php echo s($bar['label']); ?>: <?php echo $bar['cnt']; ?> <?php echo get_string('times', 'report_courseradar'); ?>">
-                    </div>
-                    <?php endforeach; ?>
-                  </div>
                 </div>
-                <?php endif; ?>
               </div>
             </td>
           </tr>

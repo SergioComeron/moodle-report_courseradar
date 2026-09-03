@@ -117,5 +117,20 @@ function xmldb_report_courseradar_upgrade($oldversion): bool {
         upgrade_plugin_savepoint(true, 2026090206, 'report', 'courseradar');
     }
 
+    if ($oldversion < 2026090207) {
+        $table = new xmldb_table('report_courseradar_conex');
+        if ($dbman->table_exists($table)) {
+            $field = new xmldb_field('liverows', XMLDB_TYPE_TEXT, null, null, null, null, null, 'delayedseconds');
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+            $field = new xmldb_field('delayedrows', XMLDB_TYPE_TEXT, null, null, null, null, null, 'liverows');
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+        upgrade_plugin_savepoint(true, 2026090207, 'report', 'courseradar');
+    }
+
     return true;
 }

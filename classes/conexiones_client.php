@@ -94,7 +94,7 @@ class conexiones_client {
         }
 
         $cache    = \cache::make('report_courseradar', 'conexiones');
-        $cachekey = $course->id . '_' . $user->id . '_' . $tipo . '_v2';
+        $cachekey = $course->id . '_' . $user->id . '_' . $tipo . '_v4';
         if (!$force) {
             $cached = $cache->get($cachekey);
             if (is_array($cached) && isset($cached['ok'])) {
@@ -184,7 +184,14 @@ class conexiones_client {
             $generalseconds = self::extract_seconds($data['General']);
         }
         $rootseconds = max($generalseconds, self::extract_seconds($data));
-        $list        = self::extract_list($data);
+        $list = [];
+        if (!empty($data['Asistencias']) && is_array($data['Asistencias'])) {
+            $list = $data['Asistencias'];
+        } else if (!empty($data['asistencias']) && is_array($data['asistencias'])) {
+            $list = $data['asistencias'];
+        } else {
+            $list = self::extract_list($data);
+        }
         $seconds     = 0;
         $rows        = [];
         foreach ($list as $item) {
@@ -197,9 +204,15 @@ class conexiones_client {
             $title = self::first_string($item, [
                 'Sesion', 'Sesión', 'Titulo', 'Título', 'Nombre', 'Descripcion', 'Descripción',
             ]);
+            $start = self::first_string($item, ['Inicio', 'HoraInicio', 'HoraInicioZoom']);
+            $end   = self::first_string($item, ['Fin', 'HoraFin', 'HoraFinZoom']);
+            $sess  = self::first_string($item, ['Sesion', 'Sesión']);
             $rows[] = [
-                'title'    => $title !== '' ? $title : $when,
+                'title'    => $title !== '' ? $title : ($sess !== '' ? $sess : $when),
                 'when'     => $when,
+                'session'  => $sess,
+                'start'    => $start,
+                'end'      => $end,
                 'duration' => $secs > 0 ? \report_courseradar_format_dedication($secs) : '',
             ];
         }
@@ -397,7 +410,9 @@ class conexiones_client {
             'Items', 'items', 'Resultado', 'resultado', 'data', 'Data',
         ];
         foreach ($keys as $key) {
-            if (isset($data[$key]) && is_array($data[$key]) && self::is_list($data[$key])) {
+            $isnonemptylist = isset($data[$key]) && is_array($data[$key])
+                && self::is_list($data[$key]) && $data[$key] !== [];
+            if ($isnonemptylist) {
                 return $data[$key];
             }
         }
@@ -429,16 +444,35 @@ class conexiones_client {
      * @return int
      */
     private static function extract_seconds(array $item): int {
+        $preferred = [
+            'TiempoTotal', 'TiempoVimeo', 'TiempoParcial', 'Horas', 'HorasVimeo', 'Duracion',
+        ];
+        foreach ($preferred as $key) {
+            if (!isset($item[$key]) || is_array($item[$key])) {
+                continue;
+            }
+            $parsed = self::value_to_seconds($item[$key], true);
+            if ($parsed > 0) {
+                return $parsed;
+            }
+        }
         foreach ($item as $key => $value) {
             $k = strtolower((string)$key);
             if (is_array($value)) {
                 continue;
             }
-            if (is_string($value)) {
-                $parsed = self::parse_duration_string($value);
-                if ($parsed !== null) {
-                    return $parsed;
-                }
+            $isclock = strpos($k, 'inicio') !== false || strpos($k, 'fin') !== false;
+            if ($isclock) {
+                continue;
+            }
+            $lookslike = strpos($k, 'tiempo') !== false
+                || strpos($k, 'duracion') !== false
+                || strpos($k, 'duration') !== false
+                || strpos($k, 'horas') !== false
+                || strpos($k, 'vimeo') !== false;
+            $parsed = self::value_to_seconds($value, $lookslike);
+            if ($parsed > 0) {
+                return $parsed;
             }
             if (!is_numeric($value)) {
                 continue;
@@ -466,22 +500,54 @@ class conexiones_client {
     }
 
     /**
+     * Convert a scalar to seconds, or 0 if it is not a duration.
+     *
+     * @param mixed $value
+     * @param bool $allowhhmm
+     * @return int
+     */
+    private static function value_to_seconds($value, bool $allowhhmm): int {
+        if (is_string($value)) {
+            $parsed = self::parse_duration_string($value, $allowhhmm);
+            return $parsed !== null ? $parsed : 0;
+        }
+        return 0;
+    }
+
+    /**
      * Parse HH:MM:SS or "5h 43'" into seconds.
      *
      * @param string $value
+     * @param bool $allowhhmm Whether a two-part HH:MM value may be a duration.
      * @return int|null
      */
-    private static function parse_duration_string(string $value): ?int {
+    private static function parse_duration_string(string $value, bool $allowhhmm = false): ?int {
         $value = trim($value);
-        if (preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $value)) {
+        if (preg_match('/^\d{1,2}:\d{2}:\d{2}$/', $value)) {
             $parts = array_map('intval', explode(':', $value));
-            if (count($parts) === 3) {
-                return $parts[0] * 3600 + $parts[1] * 60 + $parts[2];
-            }
+            return $parts[0] * 3600 + $parts[1] * 60 + $parts[2];
+        }
+        if ($allowhhmm && preg_match('/^\d{1,2}:\d{2}$/', $value)) {
+            $parts = array_map('intval', explode(':', $value));
             return $parts[0] * 60 + $parts[1];
         }
-        if (preg_match("/^(\d+)\s*h\s*(\d+)\s*['m]?$/iu", $value, $m)) {
+        if (preg_match("/^(\d+)\s*h\s*(\d+)\s*['’′´]?\s*m?$/iu", $value, $m)) {
             return ((int)$m[1] * 3600) + ((int)$m[2] * 60);
+        }
+        if (preg_match_all('/(\d+)\s*(hora|minuto|segundo)/iu', $value, $m, PREG_SET_ORDER)) {
+            $secs = 0;
+            foreach ($m as $part) {
+                $n = (int)$part[1];
+                $u = function_exists('mb_strtolower') ? mb_strtolower($part[2]) : strtolower($part[2]);
+                if (strpos($u, 'hora') === 0) {
+                    $secs += $n * 3600;
+                } else if (strpos($u, 'minuto') === 0) {
+                    $secs += $n * 60;
+                } else {
+                    $secs += $n;
+                }
+            }
+            return $secs;
         }
         return null;
     }

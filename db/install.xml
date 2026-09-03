@@ -15,6 +15,8 @@
         <FIELD NAME="liveseconds" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="delayedlabel" TYPE="char" LENGTH="50" NOTNULL="false"/>
         <FIELD NAME="delayedseconds" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="liverows" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="delayedrows" TYPE="text" NOTNULL="false"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

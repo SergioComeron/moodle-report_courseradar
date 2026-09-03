@@ -157,6 +157,10 @@ class conexiones_store {
             $fields['liveseconds']    = (int)($live['seconds'] ?? 0);
             $fields['delayedlabel']   = (string)($delayed['label'] ?? '');
             $fields['delayedseconds'] = (int)($delayed['seconds'] ?? 0);
+            if ($DB->get_manager()->field_exists('report_courseradar_conex', 'liverows')) {
+                $fields['liverows']    = json_encode($live['rows'] ?? [], JSON_UNESCAPED_UNICODE);
+                $fields['delayedrows'] = json_encode($delayed['rows'] ?? [], JSON_UNESCAPED_UNICODE);
+            }
         }
         if ($row) {
             foreach ($fields as $k => $v) {
@@ -188,16 +192,28 @@ class conexiones_store {
         $fetched = $row ? (int)$row->timefetched : 0;
         $live = ($row && (string)$row->livelabel !== '') ? (string)$row->livelabel : '…';
         $delayed = ($row && (string)$row->delayedlabel !== '') ? (string)$row->delayedlabel : '…';
+        $liverows = [];
+        $delayedrows = [];
+        if ($row && !empty($row->liverows)) {
+            $decoded = json_decode((string)$row->liverows, true);
+            $liverows = is_array($decoded) ? $decoded : [];
+        }
+        if ($row && !empty($row->delayedrows)) {
+            $decoded = json_decode((string)$row->delayedrows, true);
+            $delayedrows = is_array($decoded) ? $decoded : [];
+        }
         return [
             'live' => [
                 'ok'      => $fetched > 0,
                 'label'   => $live,
                 'seconds' => $row ? (int)$row->liveseconds : 0,
+                'rows'    => $liverows,
             ],
             'delayed' => [
                 'ok'      => $fetched > 0,
                 'label'   => $delayed,
                 'seconds' => $row ? (int)$row->delayedseconds : 0,
+                'rows'    => $delayedrows,
             ],
             'timefetched' => $fetched,
             'stale'       => !self::is_fresh($row),
@@ -220,6 +236,7 @@ class conexiones_store {
             'ok'      => !empty($data['live']['ok']),
             'label'   => (string)($data['live']['label'] ?? $out['live']['label']),
             'seconds' => (int)($data['live']['seconds'] ?? 0),
+            'rows'    => $data['live']['rows'] ?? [],
             'error'   => (string)($data['live']['error'] ?? ''),
             'request' => $data['live']['request'] ?? null,
         ];
@@ -227,6 +244,7 @@ class conexiones_store {
             'ok'      => !empty($data['delayed']['ok']),
             'label'   => (string)($data['delayed']['label'] ?? $out['delayed']['label']),
             'seconds' => (int)($data['delayed']['seconds'] ?? 0),
+            'rows'    => $data['delayed']['rows'] ?? [],
             'error'   => (string)($data['delayed']['error'] ?? ''),
             'request' => $data['delayed']['request'] ?? null,
         ];
