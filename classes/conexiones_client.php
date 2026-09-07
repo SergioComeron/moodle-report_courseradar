@@ -16,6 +16,10 @@
 
 namespace report_courseradar;
 
+defined('MOODLE_INTERNAL') || die();
+
+require_once(__DIR__ . '/../locallib.php');
+
 /**
  * Client for POST /Informes/GetInformeConexionesAlumno.
  *
