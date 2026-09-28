@@ -81,6 +81,22 @@ if ($ADMIN->fulltree) {
     ));
 
     $settings->add(new admin_setting_heading(
+        'report_courseradar/timesourceheading',
+        get_string('timesourceheading', 'report_courseradar'),
+        get_string('timesourceheading_desc', 'report_courseradar')
+    ));
+    $settings->add(new admin_setting_configselect(
+        'report_courseradar/timesource',
+        get_string('timesource', 'report_courseradar'),
+        get_string('timesource_desc', 'report_courseradar'),
+        'dedication',
+        [
+            'dedication' => get_string('timesource_dedication', 'report_courseradar'),
+            'attendanceregister' => get_string('timesource_attendanceregister', 'report_courseradar'),
+        ]
+    ));
+
+    $settings->add(new admin_setting_heading(
         'report_courseradar/studentviewheading',
         get_string('studentviewheading', 'report_courseradar'),
         get_string('studentviewheading_desc', 'report_courseradar')

@@ -166,7 +166,7 @@ if ($isstudentview) {
         $rs->close();
     }
 
-    // Time spent in the course, when block_dedication is available (whole course).
+    // Time spent in the course, when the configured source is available (whole course).
     $dedication    = [];
     $hasdedication = false;
     $mydedication  = 0;
@@ -455,12 +455,13 @@ if ($totalstudents > 0) {
     $rs->close();
 }
 
-// Time spent per student, read from block_dedication when it is installed.
-// The block precalculates sessions through a scheduled task, so the column stays
-// empty until that task has run. Viewing it also requires the block's own
-// reporting capability, so its restrictions are not bypassed here.
-$hasdedication = report_courseradar_dedication_available()
-    && has_capability('block/dedication:viewreports', $context);
+// Time spent per student, from the plugin selected in timesource (Dedication or
+// Attendance Register). The column stays hidden if that plugin is not installed.
+// Dedication also requires the block's own reporting capability.
+$hasdedication = report_courseradar_dedication_available();
+if ($hasdedication && report_courseradar_timesource() === 'dedication') {
+    $hasdedication = has_capability('block/dedication:viewreports', $context);
+}
 $dedication    = []; // Keyed by userid: seconds spent in the course.
 $avgdedication = 0;
 

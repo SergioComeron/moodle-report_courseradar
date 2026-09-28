@@ -98,7 +98,7 @@ class conexiones_client {
         }
 
         $cache    = \cache::make('report_courseradar', 'conexiones');
-        $cachekey = $course->id . '_' . $user->id . '_' . $tipo . '_v4';
+        $cachekey = $course->id . '_' . $user->id . '_' . $tipo . '_v6';
         if (!$force) {
             $cached = $cache->get($cachekey);
             if (is_array($cached) && isset($cached['ok'])) {
@@ -149,7 +149,7 @@ class conexiones_client {
             return $empty;
         }
 
-        $summary = self::summarise($result['data'] ?? null);
+        $summary = self::summarise($result['data'] ?? null, $tipo);
         $summary['request'] = $request;
         $cache->set($cachekey, $summary);
         return $summary;
@@ -159,12 +159,14 @@ class conexiones_client {
      * Turn an unknown API payload into a short label plus optional rows.
      *
      * @param mixed $data Decoded JSON.
+     * @param int $tipo 1 live, 2 on-demand, 0 when unknown.
      * @return array
      */
-    public static function summarise($data): array {
+    public static function summarise($data, int $tipo = 0): array {
         $out = [
             'ok'      => true,
             'label'   => '0',
+            'percent' => '',
             'count'   => 0,
             'seconds' => 0,
             'rows'    => [],
@@ -232,7 +234,50 @@ class conexiones_client {
         } else if ($out['count'] > 0) {
             $out['label'] = (string)$out['count'];
         }
+        $general = (isset($data['General']) && is_array($data['General'])) ? $data['General'] : [];
+        $percent = self::extract_percent($general, $tipo);
+        if ($percent !== null) {
+            $out['percent'] = $percent;
+            $out['label'] .= ' · ' . $percent;
+        }
         return $out;
+    }
+
+    /**
+     * Percentage string from General, for the requested report type.
+     *
+     * Live reports use PorcentajeDirecto. On-demand reports use PorcentajeDiferido.
+     *
+     * @param array $item General object.
+     * @param int $tipo 1 live, 2 on-demand.
+     * @return string|null For example "75%".
+     */
+    private static function extract_percent(array $item, int $tipo): ?string {
+        if ($tipo === self::TIPO_DIFERIDO) {
+            $key = 'PorcentajeDiferido';
+        } else if ($tipo === self::TIPO_DIRECTO) {
+            $key = 'PorcentajeDirecto';
+        } else {
+            return null;
+        }
+        if (!array_key_exists($key, $item) || is_array($item[$key])) {
+            return null;
+        }
+        $value = trim((string)$item[$key]);
+        if ($value === '' || $value === '-') {
+            return null;
+        }
+        if (substr($value, -1) === '%') {
+            return $value;
+        }
+        if (!is_numeric($value)) {
+            return null;
+        }
+        $number = (float)$value;
+        $shown = abs($number - round($number)) < 0.05
+            ? (string)(int)round($number)
+            : rtrim(rtrim(number_format($number, 1, '.', ''), '0'), '.');
+        return $shown . '%';
     }
 
     /**
@@ -452,7 +497,7 @@ class conexiones_client {
             'TiempoTotal', 'TiempoVimeo', 'TiempoParcial', 'Horas', 'HorasVimeo', 'Duracion',
         ];
         foreach ($preferred as $key) {
-            if (!isset($item[$key]) || is_array($item[$key])) {
+            if (!isset($item[$key]) || is_array($item[$key]) || self::is_scheduled_duration_key($key)) {
                 continue;
             }
             $parsed = self::value_to_seconds($item[$key], true);
@@ -462,7 +507,7 @@ class conexiones_client {
         }
         foreach ($item as $key => $value) {
             $k = strtolower((string)$key);
-            if (is_array($value)) {
+            if (is_array($value) || self::is_scheduled_duration_key($k)) {
                 continue;
             }
             $isclock = strpos($k, 'inicio') !== false || strpos($k, 'fin') !== false;
@@ -501,6 +546,16 @@ class conexiones_client {
             }
         }
         return 0;
+    }
+
+    /**
+     * HorasTelepresencia is the planned session length, not time connected or watched.
+     *
+     * @param string $key
+     * @return bool
+     */
+    private static function is_scheduled_duration_key(string $key): bool {
+        return strpos(strtolower($key), 'telepresencia') !== false;
     }
 
     /**

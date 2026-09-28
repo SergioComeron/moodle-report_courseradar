@@ -33,7 +33,10 @@ require_once($CFG->dirroot . '/report/courseradar/locallib.php');
  * @covers     \report_courseradar_engagement_scores
  * @covers     \report_courseradar_score_bands
  * @covers     \report_courseradar_scatter_data
+ * @covers     \report_courseradar_timesource
  * @covers     \report_courseradar_dedication
+ * @covers     \report_courseradar_dedication_from_block
+ * @covers     \report_courseradar_dedication_from_attendanceregister
  * @covers     \report_courseradar_dedication_average
  * @covers     \report_courseradar_format_dedication
  * @covers     \report_courseradar_student_display
@@ -177,6 +180,30 @@ final class lib_test extends \advanced_testcase {
 
         $this->assertEquals($s2->id, $keys[0]);
         $this->assertEquals($s1->id, $keys[1]);
+    }
+
+    /**
+     * Suspended accounts and suspended enrolments are not listed.
+     */
+    public function test_get_students_excludes_suspended(): void {
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $active = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $accountsuspended = $this->getDataGenerator()->create_and_enrol($course, 'student', ['suspended' => 1]);
+        $enrolsuspended = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $context = \context_course::instance($course->id);
+
+        global $DB;
+        $ue = $DB->get_record('user_enrolments', ['userid' => $enrolsuspended->id], '*', MUST_EXIST);
+        $ue->status = ENROL_USER_SUSPENDED;
+        $DB->update_record('user_enrolments', $ue);
+
+        $students = report_courseradar_get_students($context);
+
+        $this->assertArrayHasKey($active->id, $students);
+        $this->assertArrayNotHasKey($accountsuspended->id, $students);
+        $this->assertArrayNotHasKey($enrolsuspended->id, $students);
     }
 
     // Capability checks.
@@ -611,6 +638,95 @@ final class lib_test extends \advanced_testcase {
         $this->assertArrayNotHasKey($student->id, $empty);
     }
 
+    /**
+     * Unsaved timesource defaults to the Dedication block.
+     */
+    public function test_timesource_defaults_to_dedication(): void {
+        $this->resetAfterTest();
+        $this->assertEquals('dedication', report_courseradar_timesource());
+    }
+
+    /**
+     * The configured timesource is the only plugin that counts as available.
+     */
+    public function test_dedication_available_follows_timesource_setting(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $dbman = $DB->get_manager();
+
+        set_config('timesource', 'dedication', 'report_courseradar');
+        $this->assertEquals(
+            class_exists('\block_dedication\lib\utils') && $dbman->table_exists('block_dedication'),
+            report_courseradar_dedication_available()
+        );
+
+        set_config('timesource', 'attendanceregister', 'report_courseradar');
+        $this->assertEquals(
+            $dbman->table_exists('attendanceregister') && $dbman->table_exists('attendanceregister_session'),
+            report_courseradar_dedication_available()
+        );
+    }
+
+    /**
+     * Attendance Register sessions are summed per student and filtered by date.
+     */
+    public function test_dedication_from_attendanceregister_sums_sessions_in_range(): void {
+        global $DB;
+        $this->resetAfterTest();
+        set_config('timesource', 'attendanceregister', 'report_courseradar');
+        if (!report_courseradar_dedication_available()) {
+            $this->markTestSkipped('mod_attendanceregister is not installed.');
+        }
+        $course  = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $other   = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $week    = time() - WEEKSECS;
+
+        $registerid = $DB->insert_record('attendanceregister', (object)[
+            'course' => $course->id,
+            'name' => 'Register',
+            'type' => 'course',
+            'offlinesessions' => 0,
+            'sessiontimeout' => 30,
+            'dayscertificable' => 10,
+            'offlinecomments' => 0,
+            'mandatoryofflinecomm' => 0,
+            'offlinespecifycourse' => 0,
+            'mandofflspeccourse' => 0,
+            'timemodified' => time(),
+            'intro' => '',
+            'introformat' => FORMAT_HTML,
+            'pendingrecalc' => 0,
+            'completiontotaldurationmins' => 0,
+        ]);
+        $sessions = [
+            [$student->id, 600, $week, 1],
+            [$student->id, 900, $week + DAYSECS, 1],
+            [$student->id, 1200, $week, 0],
+            [$other->id, 300, $week, 1],
+        ];
+        foreach ($sessions as $row) {
+            $DB->insert_record('attendanceregister_session', (object)[
+                'register' => $registerid,
+                'userid' => $row[0],
+                'duration' => $row[1],
+                'login' => $row[2],
+                'logout' => $row[2] + $row[1],
+                'onlinesess' => $row[3],
+            ]);
+        }
+
+        $all = report_courseradar_dedication($course->id, [$student->id, $other->id]);
+        $this->assertEquals(1500, $all[$student->id]);
+        $this->assertEquals(300, $all[$other->id]);
+
+        $ranged = report_courseradar_dedication($course->id, [$student->id], $week + HOURSECS);
+        $this->assertEquals(900, $ranged[$student->id]);
+
+        $empty = report_courseradar_dedication($course->id, [$student->id], 0, $week - DAYSECS);
+        $this->assertArrayNotHasKey($student->id, $empty);
+    }
+
     // Tests for report_courseradar_student_display.
 
     /**
@@ -709,6 +825,74 @@ final class lib_test extends \advanced_testcase {
         $this->assertSame(2 * 3600 + 40 * 60, $out['seconds']);
         $this->assertSame('15:59', $out['rows'][0]['start']);
         $this->assertSame('55m', $out['rows'][0]['duration']);
+    }
+
+    /**
+     * Live and on-demand totals keep the API percentage after the time.
+     */
+    public function test_conexiones_summarise_appends_percentages(): void {
+        $live = \report_courseradar\conexiones_client::summarise([
+            'datosInforme' => [
+                'General' => [
+                    'Horas' => "2h 40'",
+                    'PorcentajeDirecto' => '75%',
+                    'PorcentajeDiferido' => '10%',
+                ],
+                'Asistencias' => [],
+            ],
+        ], \report_courseradar\conexiones_client::TIPO_DIRECTO);
+        $this->assertSame('2h 40m · 75%', $live['label']);
+        $this->assertSame('75%', $live['percent']);
+
+        $delayed = \report_courseradar\conexiones_client::summarise([
+            'datosInforme' => [
+                'General' => [
+                    'HorasVimeo' => "5h 43'",
+                    'PorcentajeDirecto' => '75%',
+                    'PorcentajeDiferido' => '40%',
+                ],
+                'Asistencias' => [],
+            ],
+        ], \report_courseradar\conexiones_client::TIPO_DIFERIDO);
+        $this->assertSame('5h 43m · 40%', $delayed['label']);
+        $this->assertSame('40%', $delayed['percent']);
+    }
+
+    /**
+     * HorasTelepresencia is the planned length. Zero watched time stays zero.
+     */
+    public function test_conexiones_summarise_ignores_telepresencia(): void {
+        $data = [
+            'datosInforme' => [
+                'General' => [
+                    'Horas' => "0h 0'",
+                    'HorasVimeo' => "0h 0'",
+                    'HorasTelepresencia' => "1h 30'",
+                    'PorcentajeDiferido' => '0%',
+                ],
+                'Asistencias' => [],
+            ],
+        ];
+        $out = \report_courseradar\conexiones_client::summarise(
+            $data,
+            \report_courseradar\conexiones_client::TIPO_DIFERIDO
+        );
+        $this->assertSame(0, $out['seconds']);
+        $this->assertSame('0 · 0%', $out['label']);
+
+        $live = \report_courseradar\conexiones_client::summarise([
+            'datosInforme' => [
+                'General' => [
+                    'Horas' => "0h 32'",
+                    'HorasVimeo' => "0h 0'",
+                    'HorasTelepresencia' => "1h 30'",
+                    'PorcentajeDirecto' => '36%',
+                ],
+                'Asistencias' => [],
+            ],
+        ], \report_courseradar\conexiones_client::TIPO_DIRECTO);
+        $this->assertSame(32 * 60, $live['seconds']);
+        $this->assertSame('32m · 36%', $live['label']);
     }
 
     /**

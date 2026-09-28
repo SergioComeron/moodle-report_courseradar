@@ -58,27 +58,25 @@ function report_courseradar_barclass(int $pct): string {
  *
  * Users that hold the report/courseradar:view capability are considered
  * non-students and are excluded from interaction tracking.
+ * Suspended accounts and suspended enrolments are excluded.
  *
  * @param \context_course $context Course context.
  * @return array Associative array [userid => stdClass] sorted by lastname, firstname.
  */
 function report_courseradar_get_students(\context_course $context): array {
-    $allenrolled = get_enrolled_users(
-        $context,
-        '',
-        0,
-        'u.id, u.username, u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic,' .
-        ' u.middlename, u.alternatename, u.picture, u.imagealt, u.email'
-    );
+    $userfields = 'u.id, u.username, u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic,' .
+        ' u.middlename, u.alternatename, u.picture, u.imagealt, u.email, u.suspended';
+    $allenrolled = get_enrolled_users($context, '', 0, $userfields, null, 0, 0, true);
     $canviewids = array_keys(
-        get_enrolled_users($context, 'report/courseradar:view', 0, 'u.id')
+        get_enrolled_users($context, 'report/courseradar:view', 0, 'u.id', null, 0, 0, true)
     );
 
     $students = [];
     foreach ($allenrolled as $u) {
-        if (!in_array($u->id, $canviewids)) {
-            $students[$u->id] = $u;
+        if (!empty($u->suspended) || in_array($u->id, $canviewids)) {
+            continue;
         }
+        $students[$u->id] = $u;
     }
     uasort($students, function ($a, $b) {
         return strcmp($a->lastname . $a->firstname, $b->lastname . $b->firstname);
@@ -140,39 +138,76 @@ function report_courseradar_inactive_class(int $days): string {
 }
 
 /**
- * Whether time-spent data from block_dedication can be read.
+ * Configured plugin that supplies time-spent data.
  *
- * Requires the Catalyst flavour of block_dedication, which precalculates
- * sessions into its own table through a scheduled task. Older flavours of the
- * block compute dedication on the fly and expose no such table, so the feature
- * simply stays hidden.
+ * Site setting report_courseradar/timesource. Unknown or empty values fall back
+ * to the Dedication block so UDIMA keeps the previous behaviour.
  *
- * @return bool True when the block and its data table are present.
+ * @return string 'dedication' or 'attendanceregister'
  */
-function report_courseradar_dedication_available(): bool {
-    global $DB;
-    return class_exists('\block_dedication\lib\utils')
-        && $DB->get_manager()->table_exists('block_dedication');
+function report_courseradar_timesource(): string {
+    $source = get_config('report_courseradar', 'timesource');
+    if ($source === 'attendanceregister') {
+        return 'attendanceregister';
+    }
+    return 'dedication';
 }
 
 /**
- * Returns the time each student spent in the course, as recorded by block_dedication.
+ * Whether time-spent data can be read from the configured source.
  *
- * Sessions are aggregated in a single query rather than calling
- * block_dedication\lib\utils::timespent() per student, which would issue one
- * query each and ignore the report date range.
+ * Dedication requires the Catalyst flavour of block_dedication (precalculated
+ * table). Attendance Register requires its session tables. The feature stays
+ * hidden when the chosen plugin is not installed.
+ *
+ * @return bool True when the configured source's tables are present.
+ */
+function report_courseradar_dedication_available(): bool {
+    global $DB;
+    $dbman = $DB->get_manager();
+    if (report_courseradar_timesource() === 'attendanceregister') {
+        return $dbman->table_exists('attendanceregister')
+            && $dbman->table_exists('attendanceregister_session');
+    }
+    return class_exists('\block_dedication\lib\utils')
+        && $dbman->table_exists('block_dedication');
+}
+
+/**
+ * Returns the time each student spent in the course from the configured source.
  *
  * @param int   $courseid   Course id.
  * @param array $studentids Student user ids to report on.
  * @param int   $datefrom   Only count sessions started at or after this timestamp (0 = no limit).
  * @param int   $dateto     Only count sessions started at or before this timestamp (0 = no limit).
- * @return array [userid => seconds spent]; empty when the block is unavailable.
+ * @return array [userid => seconds spent]; empty when the source is unavailable.
  */
 function report_courseradar_dedication(int $courseid, array $studentids, int $datefrom = 0, int $dateto = 0): array {
-    global $DB;
     if (empty($studentids) || !report_courseradar_dedication_available()) {
         return [];
     }
+    if (report_courseradar_timesource() === 'attendanceregister') {
+        return report_courseradar_dedication_from_attendanceregister($courseid, $studentids, $datefrom, $dateto);
+    }
+    return report_courseradar_dedication_from_block($courseid, $studentids, $datefrom, $dateto);
+}
+
+/**
+ * Time spent from block_dedication (Catalyst precalculated sessions).
+ *
+ * @param int   $courseid   Course id.
+ * @param array $studentids Student user ids to report on.
+ * @param int   $datefrom   Session start lower bound (0 = no limit).
+ * @param int   $dateto     Session start upper bound (0 = no limit).
+ * @return array [userid => seconds spent]
+ */
+function report_courseradar_dedication_from_block(
+    int $courseid,
+    array $studentids,
+    int $datefrom = 0,
+    int $dateto = 0
+): array {
+    global $DB;
     [$insql, $params] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'ded');
     $params['courseid'] = $courseid;
     $where = "courseid = :courseid AND userid {$insql}";
@@ -191,6 +226,63 @@ function report_courseradar_dedication(int $courseid, array $studentids, int $da
        GROUP BY userid",
         $params
     );
+    return report_courseradar_dedication_rows_to_map($rows);
+}
+
+/**
+ * Time spent from mod_attendanceregister online sessions of this course.
+ *
+ * Uses the lowest-id instance with type "course". Offline (self-declared)
+ * sessions are excluded. Duration is stored in seconds.
+ *
+ * @param int   $courseid   Course id.
+ * @param array $studentids Student user ids to report on.
+ * @param int   $datefrom   Session login lower bound (0 = no limit).
+ * @param int   $dateto     Session login upper bound (0 = no limit).
+ * @return array [userid => seconds spent]
+ */
+function report_courseradar_dedication_from_attendanceregister(
+    int $courseid,
+    array $studentids,
+    int $datefrom = 0,
+    int $dateto = 0
+): array {
+    global $DB;
+    $registerid = $DB->get_field_sql(
+        "SELECT MIN(id) FROM {attendanceregister} WHERE course = ? AND type = ?",
+        [$courseid, 'course']
+    );
+    if (!$registerid) {
+        return [];
+    }
+    [$insql, $params] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'ded');
+    $params['registerid'] = (int)$registerid;
+    $where = "register = :registerid AND onlinesess = 1 AND userid {$insql}";
+    if ($datefrom > 0) {
+        $where .= ' AND login >= :datefrom';
+        $params['datefrom'] = $datefrom;
+    }
+    if ($dateto > 0) {
+        $where .= ' AND login <= :dateto';
+        $params['dateto'] = $dateto;
+    }
+    $rows = $DB->get_records_sql(
+        "SELECT userid, SUM(duration) AS secs
+           FROM {attendanceregister_session}
+          WHERE {$where}
+       GROUP BY userid",
+        $params
+    );
+    return report_courseradar_dedication_rows_to_map($rows);
+}
+
+/**
+ * Maps aggregated SQL rows to [userid => seconds].
+ *
+ * @param array $rows Records with userid and secs.
+ * @return array [userid => seconds spent]
+ */
+function report_courseradar_dedication_rows_to_map(array $rows): array {
     $result = [];
     foreach ($rows as $row) {
         $result[(int)$row->userid] = (int)$row->secs;
