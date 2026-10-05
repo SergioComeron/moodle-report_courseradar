@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.11.0...v1.12.0) (2026-10-05)
+
+
+### Features
+
+* avisar de que la visualización puede tardar hasta 24 horas ([2b46a6e](https://github.com/SergioComeron/moodle-report_courseradar/commit/2b46a6e6537e2d8ecde97ba3279fb96b4e47e5d3))
+
 ## [1.11.0](https://github.com/SergioComeron/moodle-report_courseradar/compare/v1.10.1...v1.11.0) (2026-09-28)
 
 
