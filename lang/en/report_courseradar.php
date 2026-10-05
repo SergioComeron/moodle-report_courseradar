@@ -71,6 +71,7 @@ $string['conexionescolduration'] = 'Duration';
 $string['conexionescoltime']   = 'Time';
 $string['conexionesdelayed']   = 'On-demand sessions';
 $string['conexionesdelayed_desc'] = 'Time spent watching recordings';
+$string['conexionesviewdelay'] = 'Viewing data takes time to load. It can sometimes take up to 24 hours.';
 $string['conexionesdetail']    = 'Session details';
 $string['conexioneserror']     = 'Could not load connection data';
 $string['conexionesexport']    = 'Export sessions';

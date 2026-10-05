@@ -71,6 +71,7 @@ $string['conexionescolduration'] = 'Duración';
 $string['conexionescoltime']   = 'Hora';
 $string['conexionesdelayed']   = 'Sesiones en diferido';
 $string['conexionesdelayed_desc'] = 'Tiempo de visualización de las grabaciones';
+$string['conexionesviewdelay'] = 'Los datos de visualización tardan en cargarse. En ocasiones pueden demorar hasta 24 horas.';
 $string['conexionesdetail']    = 'Detalle de sesiones';
 $string['conexioneserror']     = 'No se han podido cargar las conexiones';
 $string['conexionesexport']    = 'Exportar sesiones';
