@@ -150,13 +150,34 @@
         </div>
       </div>
     </div>
+    <div class="col-12">
+      <p class="small text-muted mb-0">{{#str}}conexionespercentof, report_courseradar{{/str}}</p>
+    </div>
     {{/showconexiones}}
   </div>
   {{#showconexiones}}
-    <p class="small text-muted {{#conexionesupdated}}mb-1{{/conexionesupdated}}{{^conexionesupdated}}mb-4{{/conexionesupdated}}">{{#str}}conexionesviewdelay, report_courseradar{{/str}}</p>
-    {{#conexionesupdated}}
-    <p class="small text-muted mb-4">{{conexionesupdated}}</p>
-    {{/conexionesupdated}}
+    <p class="small text-muted mb-2">{{#str}}conexionesviewdelay, report_courseradar{{/str}}</p>
+    <div class="card cr-card mb-4" id="cr-sessions">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <h5 class="mb-0 fw-bold">{{#str}}visionadosessions, report_courseradar{{/str}}</h5>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="cr-sessions-detail"
+                  aria-expanded="false" aria-controls="cr-sessions-panel">
+            {{#str}}details, report_courseradar{{/str}}
+          </button>
+        </div>
+        <div id="cr-sessions-panel" class="d-none mt-3">
+          <p class="small text-muted mb-2">{{#str}}visionadotimes, report_courseradar{{/str}}</p>
+          <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mb-2">
+            <div class="cr-session-legend small">
+              <span><i class="cr-swatch cr-swatch-live" aria-hidden="true"></i> {{#str}}visionadolive, report_courseradar{{/str}}</span>
+              <span><i class="cr-swatch cr-swatch-rec" aria-hidden="true"></i> {{#str}}visionadorecording, report_courseradar{{/str}}</span>
+            </div>
+          </div>
+          <div id="cr-sessions-body"></div>
+        </div>
+      </div>
+    </div>
   {{/showconexiones}}
   {{/haskpis}}
 
@@ -398,6 +419,21 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(function() { /* KPIs already shown. */ });
 
+    {{#showconexiones}}
+    var paintConexStat = function(el) {
+        if (!el || el.querySelector('.cr-stat-time')) {
+            return;
+        }
+        var text = (el.textContent || '').trim();
+        var match = text.match(/^(.*)\s·\s(\d+(?:[.,]\d+)?%)$/);
+        if (!match) {
+            return;
+        }
+        el.innerHTML = '<span class="cr-stat-time">' + escSession(match[1].trim()) + '</span>'
+            + '<span class="cr-stat-pct">' + escSession(match[2]) + '</span>';
+    };
+    {{/showconexiones}}
+
     {{#conexstale}}
     var url = '{{wwwroot}}/report/courseradar/conexiones.php'
         + '?id={{courseid}}&userid={{myid}}&refresh=1&sesskey={{sesskey}}';
@@ -408,23 +444,225 @@ document.addEventListener('DOMContentLoaded', function() {
             var delayed = document.getElementById('cr-stu-delayed');
             if (live && data.live && data.live.label) {
                 live.textContent = data.live.label;
+                if (typeof paintConexStat === 'function') {
+                    paintConexStat(live);
+                }
             }
             if (delayed && data.delayed && data.delayed.label) {
                 delayed.textContent = data.delayed.label;
+                if (typeof paintConexStat === 'function') {
+                    paintConexStat(delayed);
+                }
             }
         })
         .catch(function() { /* Keep cached placeholders. */ });
     {{/conexstale}}
+
+    {{#showconexiones}}
+    var sessionBody = document.getElementById('cr-sessions-body');
+    var sessionBtn = document.getElementById('cr-sessions-detail');
+    var sessionPanel = document.getElementById('cr-sessions-panel');
+    var visionadoEmpty = {{#quote}}{{#str}}conexionesnodetail, report_courseradar{{/str}}{{/quote}};
+    var visionadoError = {{#quote}}{{#str}}conexioneserror, report_courseradar{{/str}}{{/quote}};
+    var visionadoLoading = {{#quote}}{{#str}}visionadoloading, report_courseradar{{/str}}{{/quote}};
+    var visionadoSchedule = {{#quote}}{{#str}}visionadoschedule, report_courseradar{{/str}}{{/quote}};
+    var visionadoTotal = {{#quote}}{{#str}}visionadototal, report_courseradar{{/str}}{{/quote}};
+    var visionadoLive = {{#quote}}{{#str}}visionadolive, report_courseradar{{/str}}{{/quote}};
+    var visionadoRec = {{#quote}}{{#str}}visionadorecording, report_courseradar{{/str}}{{/quote}};
+    var visionadoUrl = '{{wwwroot}}/report/courseradar/conexiones.php'
+        + '?id={{courseid}}&userid={{myid}}&visionado=1&sesskey={{sesskey}}';
+    var escSession = function(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch) {
+            return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+        });
+    };
+    var columnHeight = function(seconds, scale) {
+        if (!(scale > 0) || !(seconds > 0)) {
+            return 0;
+        }
+        return Math.max(1, Math.min(100, Math.round(100 * seconds / scale)));
+    };
+    var sessionBar = function(fillClass, height) {
+        var col = height > 0
+            ? '<div class="cr-session-col ' + fillClass + '" style="height:' + height + '%"></div>'
+            : '';
+        return '<div class="cr-session-colwell">' + col + '</div>';
+    };
+    var sessionLabel = function(nameClass, name, label) {
+        return '<span class="cr-session-time" title="' + escSession(name) + ': ' + label + '">'
+            + '<span class="cr-session-name ' + nameClass + '">' + escSession(name) + '</span>'
+            + '<span class="cr-session-dur">' + label + '</span></span>';
+    };
+    var renderSessions = function(data) {
+        var rows = (data && Array.isArray(data.rows)) ? data.rows : [];
+        if (!data || data.ok === false) {
+            return '<p class="small text-danger mb-0">' + escSession(visionadoError) + '</p>';
+        }
+        if (!rows.length) {
+            return '<p class="small text-muted mb-0">' + escSession(visionadoEmpty) + '</p>';
+        }
+        var fallback = 0;
+        rows.forEach(function(row) {
+            fallback = Math.max(fallback, Number(row.live) || 0, Number(row.delayed) || 0);
+        });
+        var html = '';
+        rows.forEach(function(row) {
+            var span = row.start ? escSession(row.start) : '';
+            var liveLabel = escSession(row.livelabel || '—');
+            var delayedLabel = escSession(row.delayedlabel || '—');
+            html += '<div class="cr-session"><div class="cr-session-when"><div class="fw-semibold">'
+                + escSession(row.when || '') + '</div>';
+            if (span) {
+                html += '<div class="text-muted cr-session-clock"><span class="cr-session-kind">'
+                    + escSession(visionadoSchedule) + '</span> ' + span + '</div>';
+            }
+            if (row.classlabel) {
+                html += '<div class="text-muted cr-session-clock"><span class="cr-session-kind">'
+                    + escSession(visionadoTotal) + '</span> ' + escSession(row.classlabel) + '</div>';
+            }
+            html += '</div><div class="cr-session-cols">';
+            html += '<div class="cr-session-bars" aria-hidden="true">';
+            html += sessionBar(
+                'cr-session-live',
+                columnHeight(Number(row.live) || 0, fallback)
+            );
+            html += sessionBar(
+                'cr-session-rec',
+                columnHeight(Number(row.delayed) || 0, fallback)
+            );
+            html += '</div><div class="cr-session-labels">';
+            html += sessionLabel('cr-session-live-name', visionadoLive, liveLabel);
+            html += sessionLabel('cr-session-rec-name', visionadoRec, delayedLabel);
+            html += '</div></div></div>';
+        });
+        return html;
+    };
+    var sessionLoaded = false;
+    var sessionLoading = false;
+    var loadSessions = function() {
+        if (!sessionBody || sessionLoading || sessionLoaded) {
+            return;
+        }
+        sessionLoading = true;
+        sessionBody.innerHTML = '<p class="small text-muted mb-0"><span class="spinner-border spinner-border-sm" role="status"></span> '
+            + escSession(visionadoLoading) + '</p>';
+        fetch(visionadoUrl, {credentials: 'same-origin'})
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                sessionLoaded = true;
+                sessionLoading = false;
+                sessionBody.innerHTML = renderSessions(data);
+            })
+            .catch(function() {
+                sessionLoading = false;
+                sessionBody.innerHTML = '<p class="small text-danger mb-0">' + escSession(visionadoError) + '</p>';
+            });
+    };
+    paintConexStat(document.getElementById('cr-stu-live'));
+    paintConexStat(document.getElementById('cr-stu-delayed'));
+    if (sessionBtn && sessionPanel) {
+        sessionBtn.addEventListener('click', function() {
+            var open = sessionBtn.getAttribute('aria-expanded') === 'true';
+            if (open) {
+                sessionPanel.classList.add('d-none');
+                sessionBtn.setAttribute('aria-expanded', 'false');
+                return;
+            }
+            sessionPanel.classList.remove('d-none');
+            sessionBtn.setAttribute('aria-expanded', 'true');
+            loadSessions();
+        });
+    }
+    {{/showconexiones}}
 });
 </script>
 
 <style>
 .cr-student .cr-stat        { font-size: 2rem; font-weight: 700; line-height: 1.1; }
+.cr-student .cr-stat-time   { display: block; }
+.cr-student .cr-stat-pct    { display: block; font-size: 1.15rem; margin-top: .35rem; }
+.cr-student .cr-stat-pcthint {
+    display: block;
+    font-size: .75rem;
+    font-weight: 500;
+    line-height: 1.25;
+    color: #6c757d;
+    margin-top: .2rem;
+}
+.cr-student .cr-session-kind { font-weight: 600; }
 .cr-student .cr-stat-label  { font-size: .9rem; font-weight: 600; margin-top: .25rem; }
 .cr-student .cr-card        { border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
 .cr-student .cr-cmp-progress { height: 10px; border-radius: 6px; overflow: hidden; }
 .cr-student .cr-cmp-caption { font-size: .8rem; font-weight: 600; white-space: nowrap; min-width: 11rem; }
 .cr-student .cr-mod-icon    { width: 20px; height: 20px; }
+.cr-student .cr-session-legend { display: flex; gap: 1rem; color: #495057; }
+.cr-student .cr-swatch {
+    display: inline-block;
+    width: .3rem;
+    height: .85rem;
+    margin-right: .35rem;
+    border-radius: 2px;
+    vertical-align: -1px;
+}
+.cr-student .cr-swatch-live { background: #0d6efd; }
+.cr-student .cr-swatch-rec { background: #0f766e; }
+.cr-student #cr-sessions-body { max-height: 28rem; overflow: auto; }
+.cr-student .cr-session {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    padding: .75rem 0;
+    border-bottom: 1px solid #e9ecef;
+}
+.cr-student .cr-session:last-child { border-bottom: 0; }
+.cr-student .cr-session-when { width: 12rem; flex: 0 0 auto; }
+.cr-student .cr-session-clock { white-space: nowrap; }
+.cr-student .cr-session-cols {
+    display: flex;
+    flex: 0 1 auto;
+    gap: .75rem;
+    align-items: center;
+    min-width: 0;
+}
+.cr-student .cr-session-labels {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+}
+.cr-student .cr-session-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    flex: 0 0 auto;
+    height: 2.5rem;
+    border-bottom: 1px solid #dee2e6;
+}
+.cr-student .cr-session-colwell {
+    width: 8px;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    flex: 0 0 auto;
+}
+.cr-student .cr-session-col { width: 8px; border-radius: 2px 2px 0 0; min-height: 3px; }
+.cr-student .cr-session-live { background: #0d6efd; }
+.cr-student .cr-session-rec { background: #0f766e; }
+.cr-student .cr-session-time {
+    display: flex;
+    align-items: baseline;
+    gap: .5rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.cr-student .cr-session-name { flex: 0 0 5.5rem; font-size: .75rem; }
+.cr-student .cr-session-dur { flex: 0 0 auto; }
+.cr-student .cr-session-live-name { color: #0d6efd; }
+.cr-student .cr-session-rec-name { color: #0f766e; }
+@media (max-width: 575.98px) {
+    .cr-student .cr-session { flex-direction: column; align-items: stretch; }
+    .cr-student .cr-session-when { width: auto; }
+}
 /* Keep the activity chart inside its card on narrow columns. */
 .cr-student .chart-area     { max-width: 100%; }
 .cr-student .chart-image    { position: relative; width: 100%; }

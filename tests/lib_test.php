@@ -828,6 +828,74 @@ final class lib_test extends \advanced_testcase {
     }
 
     /**
+     * DuracionReal is the class length. It stays off the student total.
+     */
+    public function test_conexiones_summarise_keeps_class_duration_apart(): void {
+        $live = \report_courseradar\conexiones_client::summarise([
+            'datosInforme' => [
+                'General' => ['Horas' => "0h 59'"],
+                'Asistencias' => [
+                    [
+                        'Dia' => '28/09/2026',
+                        'Inicio' => '13:33',
+                        'Fin' => '14:33',
+                        'DuracionReal' => "1h 3'",
+                        'TiempoTotal' => '59 minutos y 50 segundos',
+                    ],
+                ],
+            ],
+        ], \report_courseradar\conexiones_client::TIPO_DIRECTO);
+        $this->assertSame('59m', $live['rows'][0]['duration']);
+        $this->assertSame('1h 3m', $live['rows'][0]['classduration']);
+        $this->assertSame(63 * 60, $live['rows'][0]['classseconds']);
+        $this->assertSame(59 * 60 + 50, $live['seconds']);
+
+        $delayed = \report_courseradar\conexiones_client::summarise([
+            'datosInforme' => [
+                'General' => [
+                    'Horas' => "0h 0'",
+                    'HorasVimeo' => "1h 14'",
+                ],
+                'Asistencias' => [
+                    ['Dia' => '28/09/2026', 'DuracionReal' => "1h 3'"],
+                    ['Dia' => '05/10/2026', 'DuracionReal' => "2h 31'"],
+                ],
+            ],
+        ], \report_courseradar\conexiones_client::TIPO_DIFERIDO);
+        $this->assertSame(74 * 60, $delayed['seconds']);
+        $this->assertSame('', $delayed['rows'][0]['duration']);
+        $this->assertSame('1h 3m', $delayed['rows'][0]['classduration']);
+        $this->assertSame('2h 31m', $delayed['rows'][1]['classduration']);
+    }
+
+    /**
+     * Visionado rows pick up DuracionReal from the connection report, by day.
+     */
+    public function test_apply_class_durations_matches_informe_by_day(): void {
+        $sessions = [
+            ['when' => '28/09/2026', 'start' => '13:30', 'live' => 59 * 60, 'delayed' => 0],
+            ['when' => '05/10/2026', 'start' => '13:30', 'live' => 0, 'delayed' => 74 * 60],
+            ['when' => '08/10/2026', 'start' => '18:30', 'live' => 50 * 60, 'delayed' => 0],
+            ['when' => '08/10/2026', 'start' => '10:30', 'live' => 40 * 60, 'delayed' => 0],
+        ];
+        $live = [
+            ['when' => '28/09/2026', 'start' => '13:33', 'classseconds' => 63 * 60],
+            ['when' => '08/10/2026', 'start' => '10:28', 'classseconds' => 50 * 60],
+            ['when' => '08/10/2026', 'start' => '18:33', 'classseconds' => 90 * 60],
+        ];
+        $delayed = [
+            ['when' => '28/09/2026', 'start' => '', 'classseconds' => 63 * 60],
+            ['when' => '05/10/2026', 'start' => '', 'classseconds' => 151 * 60],
+        ];
+        $rows = \report_courseradar\conexiones_client::apply_class_durations($sessions, $live, $delayed);
+        $this->assertSame('1h 3m', $rows[0]['classlabel']);
+        $this->assertSame(63 * 60, $rows[0]['classseconds']);
+        $this->assertSame('2h 31m', $rows[1]['classlabel']);
+        $this->assertSame('1h 30m', $rows[2]['classlabel']);
+        $this->assertSame('50m', $rows[3]['classlabel']);
+    }
+
+    /**
      * Live and on-demand totals keep the API percentage after the time.
      */
     public function test_conexiones_summarise_appends_percentages(): void {
@@ -893,6 +961,136 @@ final class lib_test extends \advanced_testcase {
         ], \report_courseradar\conexiones_client::TIPO_DIRECTO);
         $this->assertSame(32 * 60, $live['seconds']);
         $this->assertSame('32m · 36%', $live['label']);
+    }
+
+    /**
+     * Live visionado is one row per class. The clock in FechaInicio is not a duration.
+     */
+    public function test_visionado_directo_scheduled_class(): void {
+        $data = [
+            'General' => ['TiempoTotal' => '1h 30\''],
+            'Grabaciones' => [
+                [
+                    'IdReunion' => '8841',
+                    'Fecha' => '13/10/2026',
+                    'FechaInicio' => '13/10/2026 18:00',
+                    'FechaFin' => '13/10/2026 20:00',
+                    'TiempoTotalUnico' => '00:45:00',
+                ],
+            ],
+        ];
+        $out = \report_courseradar\conexiones_client::summarise_visionado(
+            $data,
+            \report_courseradar\conexiones_client::TIPO_DIRECTO
+        );
+        $this->assertTrue($out['ok']);
+        $this->assertSame(1, $out['count']);
+        $this->assertSame(90 * 60, $out['seconds']);
+        $this->assertSame('1h 30m', $out['label']);
+        $this->assertSame('13/10/2026', $out['rows'][0]['when']);
+        $this->assertSame('18:00', $out['rows'][0]['start']);
+        $this->assertSame('20:00', $out['rows'][0]['end']);
+        $this->assertSame('45m', $out['rows'][0]['duration']);
+        $this->assertSame(45 * 60, $out['rows'][0]['seconds']);
+        $this->assertSame(2 * 3600, $out['rows'][0]['scheduled']);
+        $this->assertSame('8841', $out['rows'][0]['reunion']);
+        $this->assertSame([], $out['rows'][0]['recordings']);
+    }
+
+    /**
+     * On-demand visionado has no FechaFin and may list several recordings for one class.
+     */
+    public function test_visionado_diferido_recordings_and_wrapper(): void {
+        $data = [
+            'datosInforme' => [
+                'Grabaciones' => [
+                    [
+                        'IdReunion' => 12,
+                        'Fecha' => '07/10/2025',
+                        'FechaInicio' => '07/10/2025 16:30:00',
+                        'TiempoTotalUnico' => 125,
+                        'IdsGrabacion' => [10, '11'],
+                    ],
+                ],
+            ],
+        ];
+        $out = \report_courseradar\conexiones_client::summarise_visionado(
+            $data,
+            \report_courseradar\conexiones_client::TIPO_DIFERIDO
+        );
+        $this->assertSame(1, $out['count']);
+        $this->assertSame(125, $out['seconds']);
+        $this->assertSame('2m', $out['label']);
+        $this->assertSame('16:30', $out['rows'][0]['start']);
+        $this->assertSame('', $out['rows'][0]['end']);
+        $this->assertSame(125, $out['rows'][0]['seconds']);
+        $this->assertSame(0, $out['rows'][0]['scheduled']);
+        $this->assertSame(['10', '11'], $out['rows'][0]['recordings']);
+        $this->assertSame('12', $out['rows'][0]['reunion']);
+    }
+
+    /**
+     * Live and recording times for the same class share one row. Newest class first.
+     */
+    public function test_visionado_merges_live_and_recording_by_reunion(): void {
+        $live = \report_courseradar\conexiones_client::summarise_visionado([
+            'Grabaciones' => [
+                [
+                    'IdReunion' => '10',
+                    'Fecha' => '01/10/2026',
+                    'FechaInicio' => '01/10/2026 18:00',
+                    'FechaFin' => '01/10/2026 20:00',
+                    'TiempoTotalUnico' => '00:45:00',
+                ],
+                [
+                    'IdReunion' => '11',
+                    'Fecha' => '08/10/2026',
+                    'FechaInicio' => '08/10/2026 18:00',
+                    'FechaFin' => '08/10/2026 19:00',
+                    'TiempoTotalUnico' => '00:20:00',
+                ],
+            ],
+        ], \report_courseradar\conexiones_client::TIPO_DIRECTO);
+        $delayed = \report_courseradar\conexiones_client::summarise_visionado([
+            'Grabaciones' => [
+                [
+                    'IdReunion' => 10,
+                    'Fecha' => '01/10/2026',
+                    'FechaInicio' => '01/10/2026 18:00',
+                    'TiempoTotalUnico' => '01:10:00',
+                    'IdsGrabacion' => [3],
+                ],
+            ],
+        ], \report_courseradar\conexiones_client::TIPO_DIFERIDO);
+
+        $rows = \report_courseradar\conexiones_client::merge_session_rows($live['rows'], $delayed['rows']);
+        $this->assertCount(2, $rows);
+        $this->assertSame('08/10/2026', $rows[0]['when']);
+        $this->assertSame(20 * 60, $rows[0]['live']);
+        $this->assertSame(0, $rows[0]['delayed']);
+        $this->assertSame('—', $rows[0]['delayedlabel']);
+        $this->assertSame(3600, $rows[0]['scheduled']);
+        $this->assertSame('01/10/2026', $rows[1]['when']);
+        $this->assertSame(45 * 60, $rows[1]['live']);
+        $this->assertSame(70 * 60, $rows[1]['delayed']);
+        $this->assertSame('1h 10m', $rows[1]['delayedlabel']);
+        $this->assertSame(2 * 3600, $rows[1]['scheduled']);
+        $this->assertSame('18:00', $rows[1]['start']);
+        $this->assertSame('20:00', $rows[1]['end']);
+    }
+
+    /**
+     * Without General.TiempoTotal the class times are added together.
+     */
+    public function test_visionado_sums_rows_when_general_is_missing(): void {
+        $out = \report_courseradar\conexiones_client::summarise_visionado([
+            'Grabaciones' => [
+                ['Fecha' => '01/10/2026', 'FechaInicio' => '01/10/2026 09:00', 'TiempoTotalUnico' => '00:10:00'],
+                ['Fecha' => '08/10/2026', 'FechaInicio' => '08/10/2026 09:00', 'TiempoTotalUnico' => '00:20:00'],
+            ],
+        ], \report_courseradar\conexiones_client::TIPO_DIFERIDO);
+        $this->assertSame(30 * 60, $out['seconds']);
+        $this->assertSame(2, $out['count']);
     }
 
     /**

@@ -229,19 +229,11 @@ if ($isstudentview) {
 
     $conexioneslive    = null;
     $conexionesdelayed = null;
-    $conexionesupdated = '';
     if ($showconexiones) {
         $stored = \report_courseradar\conexiones_store::get($courseid, $myid);
         $export = \report_courseradar\conexiones_store::export($stored);
         $conexioneslive    = $export['live'];
         $conexionesdelayed = $export['delayed'];
-        if (\report_courseradar\conexiones_store::is_fresh($stored) && !empty($export['timefetched'])) {
-            $conexionesupdated = get_string(
-                'conexionesupdated',
-                'report_courseradar',
-                userdate((int)$export['timefetched'], get_string('strftimedatetimeshort', 'langconfig'))
-            );
-        }
     }
 
     // Pending resources: visible to me, not yet visited, with a viewable URL.
@@ -327,7 +319,7 @@ if ($isstudentview) {
         'conexionesliverows' => $conexioneslive['rows'] ?? [],
         'conexionesdelayedrows' => $conexionesdelayed['rows'] ?? [],
         'hasconexionesrows' => !empty($conexioneslive['rows']) || !empty($conexionesdelayed['rows']),
-        'conexionesupdated' => $conexionesupdated,
+
         'pendingcolclass' => $showchart ? 'col-lg-6' : 'col-12',
         'chartcolclass' => $showpending ? 'col-lg-6' : 'col-12',
         'hasdedication' => $showdedication,
@@ -1007,24 +999,13 @@ function crLoadConexiones() {
         var all = document.querySelectorAll('[data-cr-conexiones]');
         var total = all.length;
         var done = 0;
-        var oldest = 0;
         all.forEach(function(c) {
-            if (c.getAttribute('data-cr-fresh') !== '1') {
-                return;
-            }
-            done++;
-            var ts = parseInt(c.getAttribute('data-timefetched') || '0', 10);
-            if (ts && (oldest === 0 || ts < oldest)) {
-                oldest = ts;
+            if (c.getAttribute('data-cr-fresh') === '1') {
+                done++;
             }
         });
         if (total > 0 && done === total) {
-            var when = oldest ? new Date(oldest * 1000).toLocaleString(undefined, {
-                day: 'numeric', month: 'short', year: 'numeric',
-                hour: '2-digit', minute: '2-digit'
-            }) : '';
-            var tpl = el.getAttribute('data-allupdated') || '{$a}';
-            el.textContent = tpl.replace('{$a}', when);
+            el.textContent = '';
             if (waitingExport) {
                 waitingExport = false;
                 crDownloadZoomCsv();
@@ -1267,6 +1248,7 @@ function crRenderConexDetail(data) {
 }
 
 function crConexRowsList(rows, isLive) {
+    var totalStr = <?php echo json_encode(get_string('visionadototal', 'report_courseradar')); ?>;
     if (!rows.length) {
         return '<p class="small text-muted mb-0">' + <?php echo json_encode(get_string('conexionesnodetail', 'report_courseradar')); ?> + '</p>';
     }
@@ -1281,6 +1263,9 @@ function crConexRowsList(rows, isLive) {
         h += '<span class="cr-ses-chip"><span>' + when + '</span>';
         if (isLive && span) {
             h += '<span class="text-muted">' + span + '</span>';
+        }
+        if (row.classduration) {
+            h += '<span class="text-muted">' + totalStr + ' ' + row.classduration + '</span>';
         }
         if (dur) {
             h += '<span class="cr-ses-dur">' + dur + '</span>';
@@ -2632,13 +2617,9 @@ function crDrawScatter() {
     <?php if ($hasconexiones): ?>
     <div class="small text-muted mt-1" id="cr-conex-status"
          data-progress="<?php echo s(get_string('conexionesprogress', 'report_courseradar',
-             (object)['done' => 'DONE', 'total' => 'TOTAL'])); ?>"
-         data-allupdated="<?php echo s(get_string('conexionesallupdated', 'report_courseradar')); ?>">
+             (object)['done' => 'DONE', 'total' => 'TOTAL'])); ?>">
       <?php
-        if ($conextotal > 0 && $conexfreshn === $conextotal && $conexoldest) {
-            echo get_string('conexionesallupdated', 'report_courseradar',
-                userdate($conexoldest, get_string('strftimedatetimeshort', 'langconfig')));
-        } else {
+        if (!($conextotal > 0 && $conexfreshn === $conextotal)) {
             echo report_courseradar_loading() . ' '
                 . get_string('conexionesprogress', 'report_courseradar',
                     (object)['done' => $conexfreshn, 'total' => $conextotal]);

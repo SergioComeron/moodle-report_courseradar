@@ -53,6 +53,20 @@ $refresh = optional_param('refresh', 0, PARAM_BOOL);
 
 header('Content-Type: application/json; charset=utf-8');
 
+// Per-class detail for the student session list. Totals stay on the stored report.
+// Without tipo, both visionado endpoints are loaded and joined by class.
+$visionado = optional_param('visionado', 0, PARAM_BOOL);
+if ($visionado) {
+    $tipo = optional_param('tipo', 0, PARAM_INT);
+    if ($tipo === 0) {
+        $summary = \report_courseradar\conexiones_client::fetch_sessions($course, $user);
+    } else {
+        $summary = \report_courseradar\conexiones_client::fetch_visionado($course, $user, $tipo);
+    }
+    echo json_encode($summary, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 $store = \report_courseradar\conexiones_store::class;
 $row   = $store::get($courseid, $userid);
 if (!$refresh && $store::is_fresh($row)) {
