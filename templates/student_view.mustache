@@ -167,7 +167,6 @@
           </button>
         </div>
         <div id="cr-sessions-panel" class="d-none mt-3">
-          <p class="small text-muted mb-2">{{#str}}visionadotimes, report_courseradar{{/str}}</p>
           <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mb-2">
             <div class="cr-session-legend small">
               <span><i class="cr-swatch cr-swatch-live" aria-hidden="true"></i> {{#str}}visionadolive, report_courseradar{{/str}}</span>
@@ -465,10 +464,12 @@ document.addEventListener('DOMContentLoaded', function() {
     var visionadoEmpty = {{#quote}}{{#str}}conexionesnodetail, report_courseradar{{/str}}{{/quote}};
     var visionadoError = {{#quote}}{{#str}}conexioneserror, report_courseradar{{/str}}{{/quote}};
     var visionadoLoading = {{#quote}}{{#str}}visionadoloading, report_courseradar{{/str}}{{/quote}};
-    var visionadoSchedule = {{#quote}}{{#str}}visionadoschedule, report_courseradar{{/str}}{{/quote}};
+    var visionadoAt = {{#quote}}{{#str}}visionadoat, report_courseradar{{/str}}{{/quote}};
     var visionadoTotal = {{#quote}}{{#str}}visionadototal, report_courseradar{{/str}}{{/quote}};
-    var visionadoLive = {{#quote}}{{#str}}visionadolive, report_courseradar{{/str}}{{/quote}};
-    var visionadoRec = {{#quote}}{{#str}}visionadorecording, report_courseradar{{/str}}{{/quote}};
+    var visionadoAttended = {{#quote}}{{#str}}visionadoattended, report_courseradar{{/str}}{{/quote}};
+    var visionadoWatched = {{#quote}}{{#str}}visionadowatched, report_courseradar{{/str}}{{/quote}};
+    var visionadoDeferred = {{#quote}}{{#str}}visionadodeferred, report_courseradar{{/str}}{{/quote}};
+    var visionadoLiveWhen = {{#quote}}{{#str}}visionadolivewhen, report_courseradar{{/str}}{{/quote}};
     var visionadoUrl = '{{wwwroot}}/report/courseradar/conexiones.php'
         + '?id={{courseid}}&userid={{myid}}&visionado=1&sesskey={{sesskey}}';
     var escSession = function(value) {
@@ -482,16 +483,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         return Math.max(1, Math.min(100, Math.round(100 * seconds / scale)));
     };
-    var sessionBar = function(fillClass, height) {
-        var col = height > 0
-            ? '<div class="cr-session-col ' + fillClass + '" style="height:' + height + '%"></div>'
+    var sessionBar = function(fillClass, width) {
+        var col = width > 0
+            ? '<div class="cr-session-col ' + fillClass + '" style="width:' + width + '%"></div>'
             : '';
         return '<div class="cr-session-colwell">' + col + '</div>';
     };
-    var sessionLabel = function(nameClass, name, label) {
-        return '<span class="cr-session-time" title="' + escSession(name) + ': ' + label + '">'
-            + '<span class="cr-session-name ' + nameClass + '">' + escSession(name) + '</span>'
-            + '<span class="cr-session-dur">' + label + '</span></span>';
+    var sessionLabel = function(nameClass, text) {
+        return '<span class="cr-session-time ' + nameClass + '">' + text + '</span>';
     };
     var renderSessions = function(data) {
         var rows = (data && Array.isArray(data.rows)) ? data.rows : [];
@@ -507,32 +506,37 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         var html = '';
         rows.forEach(function(row) {
-            var span = row.start ? escSession(row.start) : '';
+            var when = escSession(row.when || '');
+            if (row.start) {
+                when += ' ' + escSession(visionadoAt) + ' ' + escSession(row.start);
+            }
             var liveLabel = escSession(row.livelabel || '—');
             var delayedLabel = escSession(row.delayedlabel || '—');
             html += '<div class="cr-session"><div class="cr-session-when"><div class="fw-semibold">'
-                + escSession(row.when || '') + '</div>';
-            if (span) {
-                html += '<div class="text-muted cr-session-clock"><span class="cr-session-kind">'
-                    + escSession(visionadoSchedule) + '</span> ' + span + '</div>';
-            }
+                + when + '</div>';
             if (row.classlabel) {
                 html += '<div class="text-muted cr-session-clock"><span class="cr-session-kind">'
                     + escSession(visionadoTotal) + '</span> ' + escSession(row.classlabel) + '</div>';
             }
             html += '</div><div class="cr-session-cols">';
-            html += '<div class="cr-session-bars" aria-hidden="true">';
+            html += '<div class="cr-session-metric">';
             html += sessionBar(
                 'cr-session-live',
                 columnHeight(Number(row.live) || 0, fallback)
             );
+            html += sessionLabel(
+                'cr-session-live-name',
+                escSession(visionadoAttended) + ' ' + liveLabel + ' ' + escSession(visionadoLiveWhen)
+            );
+            html += '</div><div class="cr-session-metric">';
             html += sessionBar(
                 'cr-session-rec',
                 columnHeight(Number(row.delayed) || 0, fallback)
             );
-            html += '</div><div class="cr-session-labels">';
-            html += sessionLabel('cr-session-live-name', visionadoLive, liveLabel);
-            html += sessionLabel('cr-session-rec-name', visionadoRec, delayedLabel);
+            html += sessionLabel(
+                'cr-session-rec-name',
+                escSession(visionadoWatched) + ' ' + delayedLabel + ' ' + escSession(visionadoDeferred)
+            );
             html += '</div></div></div>';
         });
         return html;
@@ -598,11 +602,11 @@ document.addEventListener('DOMContentLoaded', function() {
 .cr-student .cr-session-legend { display: flex; gap: 1rem; color: #495057; }
 .cr-student .cr-swatch {
     display: inline-block;
-    width: .3rem;
-    height: .85rem;
+    width: .85rem;
+    height: .3rem;
     margin-right: .35rem;
     border-radius: 2px;
-    vertical-align: -1px;
+    vertical-align: 1px;
 }
 .cr-student .cr-swatch-live { background: #0d6efd; }
 .cr-student .cr-swatch-rec { background: #0f766e; }
@@ -615,48 +619,40 @@ document.addEventListener('DOMContentLoaded', function() {
     border-bottom: 1px solid #e9ecef;
 }
 .cr-student .cr-session:last-child { border-bottom: 0; }
-.cr-student .cr-session-when { width: 12rem; flex: 0 0 auto; }
+.cr-student .cr-session-when { flex: 0 0 auto; white-space: nowrap; }
 .cr-student .cr-session-clock { white-space: nowrap; }
 .cr-student .cr-session-cols {
     display: flex;
-    flex: 0 1 auto;
-    gap: .75rem;
-    align-items: center;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: .35rem;
+    align-items: stretch;
     min-width: 0;
 }
-.cr-student .cr-session-labels {
+.cr-student .cr-session-metric {
     display: flex;
-    flex-direction: column;
-    gap: .15rem;
-}
-.cr-student .cr-session-bars {
-    display: flex;
-    align-items: flex-end;
-    gap: 3px;
-    flex: 0 0 auto;
-    height: 2.5rem;
-    border-bottom: 1px solid #dee2e6;
+    align-items: center;
+    gap: .6rem;
+    min-width: 0;
 }
 .cr-student .cr-session-colwell {
-    width: 8px;
-    height: 100%;
-    display: flex;
-    align-items: flex-end;
+    width: 8rem;
+    height: 8px;
     flex: 0 0 auto;
+    display: flex;
+    align-items: stretch;
+    background: #e9ecef;
+    border-radius: 4px;
+    overflow: hidden;
 }
-.cr-student .cr-session-col { width: 8px; border-radius: 2px 2px 0 0; min-height: 3px; }
+.cr-student .cr-session-col { height: 100%; border-radius: 4px; }
 .cr-student .cr-session-live { background: #0d6efd; }
 .cr-student .cr-session-rec { background: #0f766e; }
 .cr-student .cr-session-time {
-    display: flex;
-    align-items: baseline;
-    gap: .5rem;
     font-variant-numeric: tabular-nums;
     font-weight: 600;
-    white-space: nowrap;
+    font-size: .8rem;
 }
-.cr-student .cr-session-name { flex: 0 0 5.5rem; font-size: .75rem; }
-.cr-student .cr-session-dur { flex: 0 0 auto; }
 .cr-student .cr-session-live-name { color: #0d6efd; }
 .cr-student .cr-session-rec-name { color: #0f766e; }
 @media (max-width: 575.98px) {
